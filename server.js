@@ -4,12 +4,21 @@ const path = require("path");
 const WebSocket = require("ws");
 
 const homepage = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const DATA_FILE = path.join(__dirname, "data.json");
 
-const store = {
-  status: { text: "", emoji: "", updatedAt: null },
-  notes: [],
-  links: [],
-};
+function loadStore() {
+  try {
+    return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  } catch {
+    return { status: { text: "", emoji: "", updatedAt: null }, notes: [], links: [] };
+  }
+}
+
+function saveStore() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2));
+}
+
+const store = loadStore();
 
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -70,6 +79,7 @@ async function handleApi(req, res, wss) {
     store.status.text = body.text ?? store.status.text;
     store.status.emoji = body.emoji ?? store.status.emoji;
     store.status.updatedAt = new Date().toISOString();
+    saveStore();
     broadcast(wss, { type: "status", data: store.status });
     return json(res, store.status);
   }
@@ -85,6 +95,7 @@ async function handleApi(req, res, wss) {
       createdAt: new Date().toISOString(),
     };
     store.notes.unshift(note);
+    saveStore();
     broadcast(wss, { type: "note_added", data: note });
     return json(res, note, 201);
   }
@@ -93,6 +104,7 @@ async function handleApi(req, res, wss) {
     const idx = store.notes.findIndex((n) => n.id === id);
     if (idx === -1) return json(res, { error: "Not found" }, 404);
     store.notes.splice(idx, 1);
+    saveStore();
     broadcast(wss, { type: "note_deleted", data: { id } });
     return json(res, { ok: true });
   }
@@ -109,6 +121,7 @@ async function handleApi(req, res, wss) {
       createdAt: new Date().toISOString(),
     };
     store.links.unshift(link);
+    saveStore();
     broadcast(wss, { type: "link_added", data: link });
     return json(res, link, 201);
   }
@@ -117,6 +130,7 @@ async function handleApi(req, res, wss) {
     const idx = store.links.findIndex((l) => l.id === id);
     if (idx === -1) return json(res, { error: "Not found" }, 404);
     store.links.splice(idx, 1);
+    saveStore();
     broadcast(wss, { type: "link_deleted", data: { id } });
     return json(res, { ok: true });
   }
