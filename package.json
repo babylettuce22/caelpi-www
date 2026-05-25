@@ -1,0 +1,24 @@
+{
+  "name": "caelpi-ws",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/babylettuce22/caelpi-ws.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/babylettuce22/caelpi-ws/issues"
+  },
+  "homepage": "https://github.com/babylettuce22/caelpi-ws#readme",
+  "dependencies": {
+    "ws": "^8.21.0"
+  }
+}
