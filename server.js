@@ -2,8 +2,30 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { execSync, exec } = require("child_process");
 const WebSocket = require("ws");
+
+// Admin auth
+const ADMIN_CONFIG = path.join(__dirname, "admin-config.json");
+let adminPassword = "caelpi2026";
+try { adminPassword = JSON.parse(fs.readFileSync(ADMIN_CONFIG, "utf8")).password; } catch {}
+const adminSessions = new Set();
+
+function generateSession() {
+  const token = crypto.randomBytes(32).toString("hex");
+  adminSessions.add(token);
+  return token;
+}
+
+function isAdminAuthed(req) {
+  const cookies = (req.headers.cookie || "").split(";").reduce(function(acc, c) {
+    var parts = c.trim().split("=");
+    if (parts.length === 2) acc[parts[0]] = parts[1];
+    return acc;
+  }, {});
+  return adminSessions.has(cookies.admin_session);
+}
 
 // Weather cache
 let weatherCache = { data: null, fetchedAt: 0 };
@@ -320,7 +342,11 @@ async function handleApi(req, res, wss) {
     }
   }
 
-  // --- Admin API ---
+  // --- Admin API (auth required) ---
+  if (pathname.startsWith("/api/admin/") && !isAdminAuthed(req)) {
+    return json(res, { error: "Unauthorized" }, 401);
+  }
+
   if (pathname === "/api/admin/system" && method === "GET") {
     try {
       var info = { platform: process.platform, arch: process.arch, nodeVersion: process.version };
@@ -486,9 +512,43 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (reqUrl.pathname === "/admin") {
+    if (!isAdminAuthed(req)) {
+      res.writeHead(302, { Location: "/admin/login" });
+      res.end();
+      return;
+    }
     const adminPage = fs.readFileSync(path.join(__dirname, "admin.html"), "utf8");
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(adminPage);
+    return;
+  }
+  if (reqUrl.pathname === "/admin/login" && req.method === "GET") {
+    const loginPage = fs.readFileSync(path.join(__dirname, "admin-login.html"), "utf8");
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(loginPage);
+    return;
+  }
+  if (reqUrl.pathname === "/admin/login" && req.method === "POST") {
+    const body = await parseBody(req);
+    if (body.password === adminPassword) {
+      const token = generateSession();
+      res.writeHead(302, {
+        Location: "/admin",
+        "Set-Cookie": "admin_session=" + token + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400",
+      });
+      res.end();
+    } else {
+      res.writeHead(302, { Location: "/admin/login?error=1" });
+      res.end();
+    }
+    return;
+  }
+  if (reqUrl.pathname === "/admin/logout") {
+    res.writeHead(302, {
+      Location: "/",
+      "Set-Cookie": "admin_session=; Path=/; HttpOnly; Max-Age=0",
+    });
+    res.end();
     return;
   }
   if (req.url === "/happy.gif") {
