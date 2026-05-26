@@ -529,8 +529,11 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (reqUrl.pathname === "/admin/login" && req.method === "POST") {
-    const body = await parseBody(req);
-    if (body.password === adminPassword) {
+    const raw = await new Promise(function(resolve) {
+      var d = ""; req.on("data", function(c) { d += c; }); req.on("end", function() { resolve(d); });
+    });
+    var params = new URLSearchParams(raw);
+    if (params.get("password") === adminPassword) {
       const token = generateSession();
       res.writeHead(302, {
         Location: "/admin",
