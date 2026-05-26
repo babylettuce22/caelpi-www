@@ -345,8 +345,9 @@ const server = http.createServer(async (req, res) => {
         saveSpotifyConfig();
         spotifyToken.access_token = result.data.access_token;
         spotifyToken.expiresAt = Date.now() + (result.data.expires_in - 60) * 1000;
-        res.writeHead(302, { Location: "/" });
-        res.end();
+        // Show the token so it can be saved to the repo permanently
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end("<h2>Spotify connected!</h2><p>Send this refresh token to save it permanently:</p><pre>" + result.data.refresh_token + "</pre><p><a href='/'>Go to homepage</a></p>");
       } else {
         res.writeHead(500, { "Content-Type": "text/plain" });
         res.end("No refresh token received: " + JSON.stringify(result.data));
