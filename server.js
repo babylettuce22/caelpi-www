@@ -327,7 +327,7 @@ const server = http.createServer(async (req, res) => {
 
   // Spotify OAuth: login redirect
   if (reqUrl.pathname === "/login") {
-    const scope = "user-read-recently-played";
+    const scope = "user-read-recently-played user-read-currently-playing";
     const authUrl = "https://accounts.spotify.com/authorize?" +
       "response_type=code" +
       "&client_id=" + encodeURIComponent(spotifyConfig.client_id) +
