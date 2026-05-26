@@ -161,6 +161,19 @@
     }
     .spotify-hidden { display: none; }
 
+    .page-title {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 28px;
+      font-weight: 300;
+      color: rgba(255, 255, 255, 0.7);
+      letter-spacing: 1px;
+    }
+
     img.bg {
       display: block;
       width: 100%;
@@ -207,6 +220,7 @@
   </style>
 </head>
 <body>
+  <div class="page-title">Cael's Page</div>
   <div class="search-bar">
     <form id="searchForm" action="https://www.google.com/search" method="GET">
       <input type="text" id="searchInput" name="q" placeholder="Search Google..." autocomplete="off" autofocus>
