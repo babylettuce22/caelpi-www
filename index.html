@@ -104,7 +104,50 @@
       line-height: 1.6;
     }
 
-    img {
+    /* Spotify */
+    .spotify {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .spotify:hover { opacity: 0.8; }
+    .spotify-art {
+      width: 44px;
+      height: 44px;
+      border-radius: 6px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .spotify-info { text-align: right; min-width: 0; }
+    .spotify-track {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 180px;
+    }
+    .spotify-artist {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 180px;
+      margin-top: 1px;
+    }
+    .spotify-label {
+      font-size: 10px;
+      color: #1db954;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .spotify-hidden { display: none; }
+
+    img.bg {
       display: block;
       width: 100%;
       height: 100%;
@@ -136,6 +179,7 @@
       .weather-temp span { font-size: 12px; }
       .weather-desc { font-size: 11px; margin-top: 2px; }
       .weather-details { display: none; }
+      .spotify-section { display: none; }
       .search-bar { top: 12px; }
       .search-bar input { font-size: 14px; padding: 10px 16px; }
     }
@@ -155,9 +199,20 @@
     <div class="weather-temp" id="weatherTemp">--<span>&deg;</span></div>
     <div class="weather-desc" id="weatherDesc">loading...</div>
     <div class="weather-details" id="weatherDetails"></div>
+    <div class="spotify-section spotify-hidden" id="spotifySection">
+      <div class="divider"></div>
+      <div class="spotify-label">Last played</div>
+      <a class="spotify" id="spotifyLink" href="#" target="_blank" rel="noopener">
+        <div class="spotify-info">
+          <div class="spotify-track" id="spotifyTrack"></div>
+          <div class="spotify-artist" id="spotifyArtist"></div>
+        </div>
+        <img class="spotify-art" id="spotifyArt" src="" alt="">
+      </a>
+    </div>
   </div>
 
-  <img src="/happy.gif" alt="">
+  <img class="bg" src="/happy.gif" alt="">
 
   <script>
     function updateClock() {
@@ -186,6 +241,22 @@
     }
     loadWeather();
     setInterval(loadWeather, 10 * 60 * 1000);
+
+    function loadSpotify() {
+      fetch("/api/recently-played")
+        .then(function(res) { return res.json(); })
+        .then(function(s) {
+          if (s.error) return;
+          document.getElementById("spotifySection").classList.remove("spotify-hidden");
+          document.getElementById("spotifyTrack").textContent = s.name;
+          document.getElementById("spotifyArtist").textContent = s.artist;
+          document.getElementById("spotifyLink").href = s.url;
+          if (s.image) document.getElementById("spotifyArt").src = s.image;
+        })
+        .catch(function() {});
+    }
+    loadSpotify();
+    setInterval(loadSpotify, 60 * 1000);
   </script>
 </body>
 </html>

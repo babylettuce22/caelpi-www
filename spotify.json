@@ -1,0 +1,6 @@
+{
+  "client_id": "e175c7a692394d3b9fddb04b43db23f1",
+  "client_secret": "c1294c581e9c48bb95334326fad92f2c",
+  "redirect_uri": "https://ws.babylettuce.net/callback",
+  "refresh_token": null
+}
