@@ -208,7 +208,7 @@
     <div class="weather-details" id="weatherDetails"></div>
     <div class="spotify-section spotify-hidden" id="spotifySection">
       <div class="divider"></div>
-      <div class="spotify-label">Last played</div>
+      <div class="spotify-label" id="spotifyLabel">Last played</div>
       <a class="spotify" id="spotifyLink" href="#" target="_blank" rel="noopener">
         <div class="spotify-info">
           <div class="spotify-track" id="spotifyTrack"></div>
@@ -258,6 +258,7 @@
           document.getElementById("spotifyTrack").textContent = s.name;
           document.getElementById("spotifyArtist").textContent = s.artist;
           document.getElementById("spotifyLink").href = s.url;
+          document.getElementById("spotifyLabel").textContent = s.is_playing ? "Now playing" : "Last played";
           if (s.image) document.getElementById("spotifyArt").src = s.image;
         })
         .catch(function() {});

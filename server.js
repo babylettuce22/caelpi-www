@@ -119,23 +119,37 @@ async function getSpotifyAccessToken() {
   return null;
 }
 
-async function fetchRecentlyPlayed() {
+function trackFromData(track, is_playing) {
+  return {
+    name: track.name,
+    artist: track.artists.map(function(a) { return a.name; }).join(", "),
+    album: track.album.name,
+    image: track.album.images.length > 0 ? track.album.images[track.album.images.length > 1 ? 1 : 0].url : null,
+    url: track.external_urls.spotify,
+    is_playing: is_playing || false,
+  };
+}
+
+async function fetchNowPlaying() {
   const token = await getSpotifyAccessToken();
   if (!token) return null;
-  const result = await httpsGet("https://api.spotify.com/v1/me/player/recently-played?limit=1", {
+
+  // Try currently playing first
+  const current = await httpsGet("https://api.spotify.com/v1/me/player/currently-playing", {
     "Authorization": "Bearer " + token,
   });
-  if (result.data && result.data.items && result.data.items.length > 0) {
-    const item = result.data.items[0];
-    const track = item.track;
-    const data = {
-      name: track.name,
-      artist: track.artists.map(function(a) { return a.name; }).join(", "),
-      album: track.album.name,
-      image: track.album.images.length > 0 ? track.album.images[track.album.images.length > 1 ? 1 : 0].url : null,
-      url: track.external_urls.spotify,
-      played_at: item.played_at,
-    };
+  if (current.status === 200 && current.data && current.data.item) {
+    const data = trackFromData(current.data.item, current.data.is_playing);
+    spotifyCache = { data: data, fetchedAt: Date.now() };
+    return data;
+  }
+
+  // Fall back to recently played
+  const recent = await httpsGet("https://api.spotify.com/v1/me/player/recently-played?limit=1", {
+    "Authorization": "Bearer " + token,
+  });
+  if (recent.data && recent.data.items && recent.data.items.length > 0) {
+    const data = trackFromData(recent.data.items[0].track, false);
     spotifyCache = { data: data, fetchedAt: Date.now() };
     return data;
   }
@@ -283,7 +297,7 @@ async function handleApi(req, res, wss) {
       if (spotifyCache.data && Date.now() - spotifyCache.fetchedAt < SPOTIFY_CACHE_TTL) {
         return json(res, spotifyCache.data);
       }
-      const data = await fetchRecentlyPlayed();
+      const data = await fetchNowPlaying();
       if (data) return json(res, data);
       return json(res, { error: "No data. Visit /login to connect Spotify." }, 401);
     } catch {
