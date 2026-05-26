@@ -2,6 +2,7 @@ const http = require("http");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const { execSync, exec } = require("child_process");
 const WebSocket = require("ws");
 
 // Weather cache
@@ -319,6 +320,108 @@ async function handleApi(req, res, wss) {
     }
   }
 
+  // --- Admin API ---
+  if (pathname === "/api/admin/system" && method === "GET") {
+    try {
+      var info = { platform: process.platform, arch: process.arch, nodeVersion: process.version };
+      info.uptime = process.uptime();
+      info.memUsed = process.memoryUsage().rss;
+      if (process.platform === "linux") {
+        try { info.systemUptime = parseFloat(execSync("cat /proc/uptime", { encoding: "utf8" }).split(" ")[0]); } catch {}
+        try {
+          var meminfo = execSync("cat /proc/meminfo", { encoding: "utf8" });
+          var total = meminfo.match(/MemTotal:\s+(\d+)/);
+          var avail = meminfo.match(/MemAvailable:\s+(\d+)/);
+          if (total) info.memTotal = parseInt(total[1]) * 1024;
+          if (avail) info.memAvail = parseInt(avail[1]) * 1024;
+        } catch {}
+        try { info.cpuTemp = parseFloat(execSync("cat /sys/class/thermal/thermal_zone0/temp", { encoding: "utf8" })) / 1000; } catch {}
+        try {
+          var df = execSync("df -B1 / | tail -1", { encoding: "utf8" }).trim().split(/\s+/);
+          info.diskTotal = parseInt(df[1]);
+          info.diskUsed = parseInt(df[2]);
+        } catch {}
+        try { info.ip = execSync("hostname -I", { encoding: "utf8" }).trim().split(" ")[0]; } catch {}
+        try { info.hostname = execSync("hostname", { encoding: "utf8" }).trim(); } catch {}
+      }
+      return json(res, info);
+    } catch (err) {
+      return json(res, { error: err.message }, 500);
+    }
+  }
+
+  if (pathname === "/api/admin/wifi/list" && method === "GET") {
+    try {
+      var networks = execSync("sudo iwlist wlan0 scan 2>/dev/null | grep -E 'ESSID|Signal'", { encoding: "utf8", timeout: 15000 });
+      var lines = networks.trim().split("\n");
+      var results = [];
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (line.startsWith("ESSID:")) {
+          var ssid = line.replace('ESSID:"', "").replace('"', "");
+          if (ssid) results.push({ ssid: ssid, signal: "" });
+        }
+        if (line.startsWith("Signal level=") || line.indexOf("Signal level=") !== -1) {
+          var match = line.match(/Signal level=(-?\d+)/);
+          if (match && results.length > 0) results[results.length - 1].signal = match[1] + " dBm";
+        }
+      }
+      return json(res, results);
+    } catch {
+      return json(res, []);
+    }
+  }
+
+  if (pathname === "/api/admin/wifi/current" && method === "GET") {
+    try {
+      var ssid = execSync("iwgetid -r 2>/dev/null", { encoding: "utf8" }).trim();
+      var ip = execSync("hostname -I 2>/dev/null", { encoding: "utf8" }).trim().split(" ")[0];
+      return json(res, { ssid: ssid, ip: ip });
+    } catch {
+      return json(res, { ssid: "", ip: "" });
+    }
+  }
+
+  if (pathname === "/api/admin/wifi/add" && method === "POST") {
+    try {
+      var body = await parseBody(req);
+      if (!body.ssid) return json(res, { error: "SSID required" }, 400);
+      var entry = '\nnetwork={\n  ssid="' + body.ssid + '"\n';
+      if (body.password) {
+        entry += '  psk="' + body.password + '"\n';
+      } else {
+        entry += '  key_mgmt=NONE\n';
+      }
+      entry += '}\n';
+      execSync("echo '" + entry.replace(/'/g, "'\\''") + "' | sudo tee -a /etc/wpa_supplicant/wpa_supplicant.conf > /dev/null", { encoding: "utf8" });
+      exec("sudo wpa_cli -i wlan0 reconfigure");
+      return json(res, { ok: true, message: "Network added. Reconfiguring..." });
+    } catch (err) {
+      return json(res, { error: err.message }, 500);
+    }
+  }
+
+  if (pathname === "/api/admin/restart" && method === "POST") {
+    json(res, { ok: true, message: "Restarting server..." });
+    setTimeout(function() { process.exit(0); }, 500);
+    return;
+  }
+
+  if (pathname === "/api/admin/reboot" && method === "POST") {
+    json(res, { ok: true, message: "Rebooting Pi..." });
+    setTimeout(function() { exec("sudo reboot"); }, 500);
+    return;
+  }
+
+  if (pathname === "/api/admin/logs" && method === "GET") {
+    try {
+      var logs = execSync("journalctl -u caelpi -n 50 --no-pager 2>/dev/null || echo 'No systemd logs available'", { encoding: "utf8" });
+      return json(res, { logs: logs });
+    } catch {
+      return json(res, { logs: "Could not retrieve logs" });
+    }
+  }
+
   return json(res, { error: "Not found" }, 404);
 }
 
@@ -380,6 +483,12 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       json(res, { error: err.message }, 400);
     }
+    return;
+  }
+  if (reqUrl.pathname === "/admin") {
+    const adminPage = fs.readFileSync(path.join(__dirname, "admin.html"), "utf8");
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(adminPage);
     return;
   }
   if (req.url === "/happy.gif") {

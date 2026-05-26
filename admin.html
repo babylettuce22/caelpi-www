@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>caelpi admin</title>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #141420;
+      --border: #1e1e30;
+      --text: #e0e0e8;
+      --dim: #6a6a80;
+      --accent: #7c6fe0;
+      --danger: #e05050;
+      --green: #50c878;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .container { max-width: 680px; margin: 0 auto; }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    h1 a {
+      color: var(--dim);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 400;
+      margin-left: 12px;
+    }
+    h1 a:hover { color: var(--accent); }
+    .subtitle { color: var(--dim); font-size: 13px; margin-bottom: 32px; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--dim);
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+    }
+    .stat {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .stat-label { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 18px; font-weight: 500; margin-top: 4px; }
+    .stat-value.green { color: var(--green); }
+    .stat-value.warn { color: #f0a030; }
+
+    .wifi-current {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg);
+      border-radius: 8px;
+      margin-bottom: 14px;
+    }
+    .wifi-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+    }
+    .wifi-ssid { font-size: 14px; font-weight: 500; }
+    .wifi-ip { font-size: 12px; color: var(--dim); }
+
+    .wifi-list { margin-bottom: 14px; }
+    .wifi-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .wifi-item:last-child { border-bottom: none; }
+    .wifi-signal { color: var(--dim); font-size: 11px; }
+
+    .form-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    input[type="text"], input[type="password"] {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+    }
+    input:focus { border-color: var(--accent); }
+
+    .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 500;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-danger { background: var(--danger); }
+    .btn-sm { padding: 6px 14px; font-size: 12px; }
+    .btn-outline {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--dim);
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .log-box {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--dim);
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 100;
+      display: none;
+    }
+    .toast.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>caelpi admin <a href="/">back to homepage</a></h1>
+    <div class="subtitle" id="hostname">loading...</div>
+
+    <div class="card">
+      <div class="card-title">System</div>
+      <div class="stat-grid" id="sysStats">
+        <div class="stat"><div class="stat-label">Uptime</div><div class="stat-value" id="sUptime">--</div></div>
+        <div class="stat"><div class="stat-label">CPU Temp</div><div class="stat-value" id="sTemp">--</div></div>
+        <div class="stat"><div class="stat-label">Memory</div><div class="stat-value" id="sMem">--</div></div>
+        <div class="stat"><div class="stat-label">Disk</div><div class="stat-value" id="sDisk">--</div></div>
+        <div class="stat"><div class="stat-label">IP</div><div class="stat-value" id="sIp">--</div></div>
+        <div class="stat"><div class="stat-label">Node</div><div class="stat-value" id="sNode">--</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">WiFi</div>
+      <div class="wifi-current" id="wifiCurrent">
+        <div class="wifi-dot"></div>
+        <div>
+          <div class="wifi-ssid" id="wifiSsid">--</div>
+          <div class="wifi-ip" id="wifiIp">--</div>
+        </div>
+      </div>
+      <div class="card-title" style="margin-top:8px">Available Networks <button class="btn btn-sm btn-outline" id="scanBtn">Scan</button></div>
+      <div class="wifi-list" id="wifiList"></div>
+      <div class="card-title" style="margin-top:8px">Add Network</div>
+      <div class="form-row">
+        <input type="text" id="wifiSsidInput" placeholder="SSID">
+        <input type="password" id="wifiPassInput" placeholder="Password (leave empty for open)">
+        <button class="btn" id="wifiAddBtn">Add</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Controls</div>
+      <div class="actions">
+        <button class="btn btn-outline" id="restartBtn">Restart Server</button>
+        <button class="btn btn-danger" id="rebootBtn">Reboot Pi</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Logs <button class="btn btn-sm btn-outline" id="logsBtn">Refresh</button></div>
+      <div class="log-box" id="logBox">loading...</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    function toast(msg) {
+      var el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      setTimeout(function() { el.classList.remove("show"); }, 3000);
+    }
+
+    function fmtBytes(b) {
+      if (b > 1073741824) return (b / 1073741824).toFixed(1) + " GB";
+      if (b > 1048576) return (b / 1048576).toFixed(0) + " MB";
+      return (b / 1024).toFixed(0) + " KB";
+    }
+
+    function fmtUptime(s) {
+      var d = Math.floor(s / 86400);
+      var h = Math.floor((s % 86400) / 3600);
+      var m = Math.floor((s % 3600) / 60);
+      if (d > 0) return d + "d " + h + "h";
+      if (h > 0) return h + "h " + m + "m";
+      return m + "m";
+    }
+
+    function loadSystem() {
+      fetch("/api/admin/system").then(function(r) { return r.json(); }).then(function(s) {
+        document.getElementById("hostname").textContent = (s.hostname || "pi") + " / " + s.platform + " " + s.arch;
+        document.getElementById("sUptime").textContent = fmtUptime(s.systemUptime || s.uptime);
+        if (s.cpuTemp !== undefined) {
+          var tempEl = document.getElementById("sTemp");
+          tempEl.textContent = s.cpuTemp.toFixed(1) + "°C";
+          tempEl.className = "stat-value" + (s.cpuTemp > 70 ? " warn" : " green");
+        }
+        if (s.memTotal && s.memAvail) {
+          var used = s.memTotal - s.memAvail;
+          var pct = Math.round(used / s.memTotal * 100);
+          document.getElementById("sMem").textContent = pct + "% (" + fmtBytes(used) + ")";
+        }
+        if (s.diskTotal && s.diskUsed) {
+          var dpct = Math.round(s.diskUsed / s.diskTotal * 100);
+          document.getElementById("sDisk").textContent = dpct + "% (" + fmtBytes(s.diskUsed) + ")";
+        }
+        document.getElementById("sIp").textContent = s.ip || "--";
+        document.getElementById("sNode").textContent = s.nodeVersion || "--";
+      });
+    }
+
+    function loadWifi() {
+      fetch("/api/admin/wifi/current").then(function(r) { return r.json(); }).then(function(w) {
+        document.getElementById("wifiSsid").textContent = w.ssid || "Not connected";
+        document.getElementById("wifiIp").textContent = w.ip || "--";
+      });
+    }
+
+    function scanWifi() {
+      document.getElementById("wifiList").innerHTML = '<div style="color:#6a6a80;font-size:12px;padding:8px">scanning...</div>';
+      fetch("/api/admin/wifi/list").then(function(r) { return r.json(); }).then(function(list) {
+        if (!list.length) {
+          document.getElementById("wifiList").innerHTML = '<div style="color:#6a6a80;font-size:12px;padding:8px">no networks found</div>';
+          return;
+        }
+        var seen = {};
+        var unique = list.filter(function(n) { if (seen[n.ssid]) return false; seen[n.ssid] = true; return true; });
+        document.getElementById("wifiList").innerHTML = unique.map(function(n) {
+          return '<div class="wifi-item"><span>' + n.ssid + '</span><span class="wifi-signal">' + n.signal + '</span></div>';
+        }).join("");
+      });
+    }
+
+    function addWifi() {
+      var ssid = document.getElementById("wifiSsidInput").value.trim();
+      var pass = document.getElementById("wifiPassInput").value;
+      if (!ssid) return;
+      fetch("/api/admin/wifi/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ssid: ssid, password: pass })
+      }).then(function(r) { return r.json(); }).then(function(d) {
+        toast(d.message || d.error);
+        document.getElementById("wifiSsidInput").value = "";
+        document.getElementById("wifiPassInput").value = "";
+      });
+    }
+
+    function loadLogs() {
+      fetch("/api/admin/logs").then(function(r) { return r.json(); }).then(function(d) {
+        document.getElementById("logBox").textContent = d.logs;
+      });
+    }
+
+    document.getElementById("scanBtn").addEventListener("click", scanWifi);
+    document.getElementById("wifiAddBtn").addEventListener("click", addWifi);
+    document.getElementById("logsBtn").addEventListener("click", loadLogs);
+
+    document.getElementById("restartBtn").addEventListener("click", function() {
+      if (!confirm("Restart the server?")) return;
+      fetch("/api/admin/restart", { method: "POST" }).then(function() {
+        toast("Server restarting...");
+      });
+    });
+
+    document.getElementById("rebootBtn").addEventListener("click", function() {
+      if (!confirm("Reboot the entire Pi? You may lose connection briefly.")) return;
+      fetch("/api/admin/reboot", { method: "POST" }).then(function() {
+        toast("Pi rebooting...");
+      });
+    });
+
+    loadSystem();
+    loadWifi();
+    loadLogs();
+    setInterval(loadSystem, 10000);
+  </script>
+</body>
+</html>
