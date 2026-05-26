@@ -5,8 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>caelpi</title>
   <style>
-    * { margin: 0; padding: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    .search-bar {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: 90%;
+      max-width: 560px;
+    }
+    .search-bar form {
+      display: flex;
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 24px;
+      overflow: hidden;
+      transition: background 0.2s;
+    }
+    .search-bar form:focus-within {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+    .search-bar input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: #fff;
+      font-size: 15px;
+      padding: 12px 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+    .search-bar input::placeholder { color: rgba(255, 255, 255, 0.4); }
     img {
       display: block;
       width: 100%;
@@ -16,6 +50,11 @@
   </style>
 </head>
 <body>
+  <div class="search-bar">
+    <form action="https://www.google.com/search" method="GET" target="_blank">
+      <input type="text" name="q" placeholder="Search Google..." autocomplete="off" autofocus>
+    </form>
+  </div>
   <img src="/happy.gif" alt="">
 </body>
 </html>
