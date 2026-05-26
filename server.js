@@ -151,6 +151,17 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+  if (req.url === "/happy.gif") {
+    const gifPath = path.join(__dirname, "happy.gif");
+    const stat = fs.statSync(gifPath);
+    res.writeHead(200, {
+      "Content-Type": "image/gif",
+      "Content-Length": stat.size,
+      "Cache-Control": "public, max-age=3600",
+    });
+    fs.createReadStream(gifPath).pipe(res);
+    return;
+  }
   res.writeHead(200, { "Content-Type": "text/html" });
   res.end(homepage);
 });
