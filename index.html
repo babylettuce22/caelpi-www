@@ -113,11 +113,31 @@
 
     @media (max-width: 640px) {
       .side-panel {
-        right: 16px;
-        padding: 20px 24px;
+        right: auto;
+        left: 50%;
+        top: auto;
+        bottom: 16px;
+        transform: translateX(-50%);
+        text-align: center;
+        padding: 14px 20px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
       }
-      .clock { font-size: 44px; letter-spacing: -2px; }
-      .weather-temp { font-size: 32px; }
+      .clock { font-size: 24px; letter-spacing: -1px; }
+      .date { font-size: 11px; margin-top: 2px; }
+      .divider {
+        width: 1px;
+        height: 32px;
+        margin: 0;
+      }
+      .weather-temp { font-size: 22px; }
+      .weather-temp span { font-size: 12px; }
+      .weather-desc { font-size: 11px; margin-top: 2px; }
+      .weather-details { display: none; }
+      .search-bar { top: 12px; }
+      .search-bar input { font-size: 14px; padding: 10px 16px; }
     }
   </style>
 </head>
