@@ -10,7 +10,7 @@
 
     .search-bar {
       position: fixed;
-      top: 72px;
+      top: 100px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 10;
@@ -161,17 +161,36 @@
     }
     .spotify-hidden { display: none; }
 
-    .page-title {
+    .top-center {
       position: fixed;
       top: 24px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 10;
+      text-align: center;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+    .page-title {
       font-size: 28px;
       font-weight: 300;
       color: rgba(255, 255, 255, 0.7);
       letter-spacing: 1px;
+    }
+    .wotd {
+      margin-top: 6px;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.35);
+      font-weight: 400;
+      max-width: 480px;
+    }
+    .wotd-word {
+      color: rgba(255, 255, 255, 0.55);
+      font-style: italic;
+      font-weight: 500;
+    }
+    .wotd-pos {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.25);
     }
 
     img.bg {
@@ -214,14 +233,19 @@
       .spotify-track { font-size: 11px; max-width: 100px; }
       .spotify-artist { font-size: 10px; max-width: 100px; }
       .spotify-info { text-align: center; }
-      .page-title { top: 12px; font-size: 20px; }
-      .search-bar { top: 48px; }
+      .top-center { top: 12px; }
+      .page-title { font-size: 20px; }
+      .wotd { font-size: 11px; max-width: 300px; margin-left: auto; margin-right: auto; }
+      .search-bar { top: 70px; }
       .search-bar input { font-size: 14px; padding: 10px 16px; }
     }
   </style>
 </head>
 <body>
-  <div class="page-title">Cael's Page</div>
+  <div class="top-center">
+    <div class="page-title">Cael's Page</div>
+    <div class="wotd" id="wotd"></div>
+  </div>
   <div class="search-bar">
     <form id="searchForm" action="https://www.google.com/search" method="GET">
       <input type="text" id="searchInput" name="q" placeholder="Search Google..." autocomplete="off" autofocus>
@@ -289,6 +313,20 @@
     }
     updateClock();
     setInterval(updateClock, 1000);
+
+    function loadWotd() {
+      fetch("/api/wotd")
+        .then(function(res) { return res.json(); })
+        .then(function(w) {
+          if (w.error) return;
+          var html = '<span class="wotd-word">' + w.word + '</span>';
+          if (w.partOfSpeech) html += ' <span class="wotd-pos">(' + w.partOfSpeech + ')</span>';
+          if (w.definition) html += ' — ' + w.definition;
+          document.getElementById("wotd").innerHTML = html;
+        })
+        .catch(function() {});
+    }
+    loadWotd();
 
     function loadWeather() {
       fetch("/api/weather")

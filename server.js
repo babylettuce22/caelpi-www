@@ -27,6 +27,39 @@ function isAdminAuthed(req) {
   return adminSessions.has(cookies.admin_session);
 }
 
+// Word of the Day cache
+const WORDNIK_KEY = "9rab8wb9z15513z8whrpahdak8nfjlqowbt6x4xjrql1w0bqm";
+let wotdCache = { data: null, fetchedAt: 0 };
+const WOTD_TTL = 60 * 60 * 1000; // 1 hour (word changes daily, but check hourly)
+
+function fetchWotd() {
+  return new Promise((resolve, reject) => {
+    https.get("https://api.wordnik.com/v4/words.json/wordOfTheDay?api_key=" + WORDNIK_KEY, (res) => {
+      let body = "";
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => {
+        try {
+          const data = JSON.parse(body);
+          const def = data.definitions && data.definitions.length > 0 ? data.definitions[0] : null;
+          const result = {
+            word: data.word,
+            definition: def ? def.text : "",
+            partOfSpeech: def ? def.partOfSpeech : "",
+            note: data.note || "",
+          };
+          wotdCache = { data: result, fetchedAt: Date.now() };
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      });
+    }).on("error", reject);
+  });
+}
+
+// Fetch on startup
+fetchWotd().catch(() => {});
+
 // Weather cache
 let weatherCache = { data: null, fetchedAt: 0 };
 const WEATHER_ZIP = "95817";
@@ -326,6 +359,19 @@ async function handleApi(req, res, wss) {
     } catch {
       if (spotifyCache.data) return json(res, spotifyCache.data);
       return json(res, { error: "Spotify unavailable" }, 502);
+    }
+  }
+
+  if (pathname === "/api/wotd" && method === "GET") {
+    try {
+      if (wotdCache.data && Date.now() - wotdCache.fetchedAt < WOTD_TTL) {
+        return json(res, wotdCache.data);
+      }
+      const data = await fetchWotd();
+      return json(res, data);
+    } catch {
+      if (wotdCache.data) return json(res, wotdCache.data);
+      return json(res, { error: "Word of the Day unavailable" }, 502);
     }
   }
 
