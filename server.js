@@ -74,6 +74,11 @@ function fetchWeather() {
         try {
           const data = JSON.parse(body);
           const current = data.current_condition[0];
+          // Guarded: a missing astronomy block should cost us sunrise/sunset,
+          // not the whole weather readout.
+          const astro =
+            (data.weather && data.weather[0] && data.weather[0].astronomy &&
+              data.weather[0].astronomy[0]) || {};
           const result = {
             temp_f: current.temp_F,
             feels_like_f: current.FeelsLikeF,
@@ -81,6 +86,8 @@ function fetchWeather() {
             humidity: current.humidity,
             wind_mph: current.windspeedMiles,
             uv_index: current.uvIndex,
+            sunrise: astro.sunrise,
+            sunset: astro.sunset,
           };
           weatherCache = { data: result, fetchedAt: Date.now() };
           resolve(result);

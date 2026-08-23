@@ -119,6 +119,14 @@
       margin-top: 8px;
       line-height: 1.6;
     }
+    .daylight {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.35);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+    .daylight-value { color: rgba(255, 255, 255, 0.6); }
+    .daylight:empty { display: none; }
 
     /* Spotify */
     .spotify {
@@ -276,6 +284,7 @@
       .weather-temp span { font-size: 12px; }
       .weather-desc { font-size: 11px; margin-top: 2px; }
       .weather-details { display: none; }
+      .daylight { display: none; }
       .spotify-section .divider { display: none; }
       .spotify-section { margin: 0; }
       .spotify-label { display: none; }
@@ -328,6 +337,7 @@
     <div class="weather-temp" id="weatherTemp">--<span>&deg;</span></div>
     <div class="weather-desc" id="weatherDesc">loading...</div>
     <div class="weather-details" id="weatherDetails"></div>
+    <div class="daylight" id="daylight"></div>
     <div class="spotify-section spotify-hidden" id="spotifySection">
       <div class="divider"></div>
       <div class="spotify-label" id="spotifyLabel">Last played</div>
@@ -379,6 +389,7 @@
     }
     updateClock();
     setInterval(updateClock, 1000);
+    setInterval(showDaylight, 1000);
 
     function showLastUpdated() {
       var el = document.getElementById("lastUpdated");
@@ -480,6 +491,55 @@
     }
     loadWotd();
 
+    // Last weather payload, kept so the daylight countdown can retick every
+    // second off the clock without refetching.
+    var lastWeather = null;
+
+    // wttr.in reports astronomy in the location's local time ("07:49 PM").
+    function parseClockTime(str, dayOffset) {
+      var m = /^([0-9]{1,2}):([0-9]{2}) *(AM|PM)$/i.exec(String(str || "").trim());
+      if (!m) return null;
+      var hour = parseInt(m[1], 10) % 12;
+      if (/pm/i.test(m[3])) hour += 12;
+      var d = new Date();
+      d.setDate(d.getDate() + (dayOffset || 0));
+      d.setHours(hour, parseInt(m[2], 10), 0, 0);
+      return d;
+    }
+
+    function formatDuration(ms) {
+      var mins = Math.max(0, Math.round(ms / 60000));
+      var hrs = Math.floor(mins / 60);
+      return hrs > 0 ? hrs + "h " + (mins % 60) + "m" : mins + "m";
+    }
+
+    function formatClock(d) {
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function showDaylight() {
+      var el = document.getElementById("daylight");
+      if (!lastWeather) return;
+      var sunrise = parseClockTime(lastWeather.sunrise, 0);
+      var sunset = parseClockTime(lastWeather.sunset, 0);
+      if (!sunrise || !sunset) return;
+      var now = new Date();
+      var html;
+      if (now < sunrise) {
+        html = "Sunrise " + formatClock(sunrise) + " &middot; in " +
+          formatDuration(sunrise - now);
+      } else if (now < sunset) {
+        html = "Sunset " + formatClock(sunset) + " &middot; <span class=\"daylight-value\">" +
+          formatDuration(sunset - now) + "</span> of light left";
+      } else {
+        // After dark, point at tomorrow. Sunrise shifts by a minute or two a
+        // day, which is well inside the resolution we display.
+        var next = parseClockTime(lastWeather.sunrise, 1);
+        html = "Sunrise " + formatClock(next) + " &middot; in " + formatDuration(next - now);
+      }
+      el.innerHTML = html;
+    }
+
     function uvBand(uv) {
       if (uv >= 11) return "Extreme";
       if (uv >= 8) return "Very high";
@@ -502,6 +562,8 @@
           var uv = parseInt(w.uv_index, 10);
           if (!isNaN(uv)) details += "<br>UV " + uv + " &middot; " + uvBand(uv);
           document.getElementById("weatherDetails").innerHTML = details;
+          lastWeather = w;
+          showDaylight();
         })
         .catch(function() {
           document.getElementById("weatherDesc").textContent = "unavailable";
