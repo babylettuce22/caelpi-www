@@ -226,6 +226,22 @@
       object-fit: contain;
     }
 
+    /* Deploy timestamp (desktop only) */
+    .last-updated {
+      position: fixed;
+      top: 20px;
+      left: 24px;
+      z-index: 10;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 11px;
+      letter-spacing: 0.3px;
+      color: rgba(255, 255, 255, 0.35);
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .last-updated:empty { display: none; }
+
     @media (max-width: 640px) {
       .side-panel {
         right: auto;
@@ -266,10 +282,13 @@
       .wotd-def { font-size: 11px; }
       .top-search { margin-top: 10px; }
       .search-bar input { font-size: 14px; padding: 10px 16px; }
+      .last-updated { display: none; }
     }
   </style>
 </head>
 <body>
+  <div class="last-updated" id="lastUpdated" data-updated="__LAST_UPDATED__"></div>
+
   <div class="top-section">
     <div class="page-title">Cael's Page</div>
     <div class="wotd" id="wotd"></div>
@@ -350,6 +369,19 @@
     }
     updateClock();
     setInterval(updateClock, 1000);
+
+    function showLastUpdated() {
+      var el = document.getElementById("lastUpdated");
+      var raw = el.getAttribute("data-updated");
+      if (!raw || raw.charAt(0) === "_") return;
+      var d = new Date(raw);
+      if (isNaN(d.getTime())) return;
+      el.textContent = "Page last updated: " + d.toLocaleString([], {
+        month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit"
+      });
+    }
+    showLastUpdated();
 
     function loadWotd() {
       fetch("/api/wotd")

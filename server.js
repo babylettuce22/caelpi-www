@@ -212,7 +212,22 @@ async function fetchNowPlaying() {
   return null;
 }
 
-const homepage = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+// Commit date of the deployed revision, injected into the homepage so a
+// push is visibly confirmable. Falls back to the file mtime if git is
+// unavailable (e.g. the service user can't read the repo).
+function lastUpdatedISO() {
+  try {
+    return execSync("git log -1 --format=%cI", { cwd: __dirname, encoding: "utf8" }).trim();
+  } catch {}
+  try {
+    return fs.statSync(path.join(__dirname, "index.html")).mtime.toISOString();
+  } catch {}
+  return "";
+}
+
+const homepage = fs
+  .readFileSync(path.join(__dirname, "index.html"), "utf8")
+  .replace("__LAST_UPDATED__", lastUpdatedISO());
 const DATA_FILE = path.join(__dirname, "data.json");
 
 function loadStore() {
