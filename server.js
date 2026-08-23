@@ -602,7 +602,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (reqUrl.pathname === "/minesweeper") {
     const minesweeperPage = fs.readFileSync(path.join(__dirname, "minesweeper.html"), "utf8");
-    res.writeHead(200, { "Content-Type": "text/html" });
+    res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });
     res.end(minesweeperPage);
     return;
   }
@@ -617,7 +617,7 @@ const server = http.createServer(async (req, res) => {
     fs.createReadStream(gifPath).pipe(res);
     return;
   }
-  res.writeHead(200, { "Content-Type": "text/html" });
+  res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });
   res.end(homepage);
 });
 
