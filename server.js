@@ -80,6 +80,7 @@ function fetchWeather() {
             desc: current.weatherDesc[0].value,
             humidity: current.humidity,
             wind_mph: current.windspeedMiles,
+            uv_index: current.uvIndex,
           };
           weatherCache = { data: result, fetchedAt: Date.now() };
           resolve(result);

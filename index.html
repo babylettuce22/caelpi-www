@@ -480,6 +480,14 @@
     }
     loadWotd();
 
+    function uvBand(uv) {
+      if (uv >= 11) return "Extreme";
+      if (uv >= 8) return "Very high";
+      if (uv >= 6) return "High";
+      if (uv >= 3) return "Moderate";
+      return "Low";
+    }
+
     function loadWeather() {
       fetch("/api/weather")
         .then(function(res) { return res.json(); })
@@ -487,10 +495,13 @@
           if (w.error) return;
           document.getElementById("weatherTemp").innerHTML = w.temp_f + '<span>&deg;F</span>';
           document.getElementById("weatherDesc").textContent = w.desc;
-          document.getElementById("weatherDetails").innerHTML =
+          var details =
             "Feels like " + w.feels_like_f + "&deg; &middot; " +
             w.humidity + "% humidity &middot; " +
             w.wind_mph + " mph wind";
+          var uv = parseInt(w.uv_index, 10);
+          if (!isNaN(uv)) details += "<br>UV " + uv + " &middot; " + uvBand(uv);
+          document.getElementById("weatherDetails").innerHTML = details;
         })
         .catch(function() {
           document.getElementById("weatherDesc").textContent = "unavailable";
