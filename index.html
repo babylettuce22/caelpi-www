@@ -258,6 +258,29 @@
       border-radius: 50%;
       background: #fff;
     }
+    /* Silhouetted reeds standing on the horizon. Inside .sky, so bodies set
+       behind them, and masked at the sides to match the horizon line's fade. */
+    .grass {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 92px;
+      pointer-events: none;
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent);
+      mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent);
+    }
+    .grass svg { display: block; width: 100%; height: 100%; }
+    .blade {
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+      animation: blade-sway ease-in-out infinite alternate;
+    }
+    @keyframes blade-sway {
+      from { transform: rotate(var(--a)); }
+      to { transform: rotate(var(--b)); }
+    }
+
     .cloud {
       position: absolute;
       border-radius: 50%;
@@ -442,6 +465,7 @@
     <div class="sky-body sun" id="sun"></div>
     <div class="sky-body moon" id="moon"><div class="moon-shadow" id="moonShadow"></div></div>
     <div class="sky-layer clouds" id="clouds"></div>
+    <div class="grass" id="grass"></div>
   </div>
   <div class="horizon"></div>
 
@@ -697,6 +721,65 @@
       host.innerHTML = html;
     }
 
+    // Rebuilt only when the width or the wind materially changes, since a
+    // rebuild re-randomises the sway phases and would otherwise visibly pop.
+    var grassState = { width: 0, wind: null };
+
+    function bladePath(x, base, height, width, lean) {
+      var tipX = x + lean;
+      var tipY = base - height;
+      var cx = x + lean * 0.35;
+      var cy = base - height * 0.55;
+      return "M" + (x - width).toFixed(1) + "," + base +
+        " Q" + cx.toFixed(1) + "," + cy.toFixed(1) + " " + tipX.toFixed(1) + "," + tipY.toFixed(1) +
+        " Q" + (cx + width * 0.85).toFixed(1) + "," + (cy + height * 0.08).toFixed(1) +
+        " " + (x + width).toFixed(1) + "," + base + " Z";
+    }
+
+    function buildGrass(wind) {
+      var host = document.getElementById("grass");
+      var width = host.clientWidth;
+      if (!width) return;
+      if (width === grassState.width && grassState.wind !== null &&
+          Math.abs(wind - grassState.wind) < 2) return;
+      grassState = { width: width, wind: wind };
+
+      var height = host.clientHeight;
+      // 0 mph is a slow idle; 25+ mph is a hard lean.
+      var strength = Math.min(1, wind / 25);
+      var count = Math.max(18, Math.round(width / 13));
+      var blades = "";
+      for (var i = 0; i < count; i++) {
+        var x = (i + Math.random() * 0.8) * (width / count);
+        var tall = Math.random();
+        var bh = height * (0.34 + tall * 0.62);
+        var bw = 1.1 + Math.random() * 1.7;
+        var lean = (Math.random() * 2 - 1) * 6 + strength * 10 * (0.5 + Math.random() * 0.5);
+        // Taller blades bend further and slower, like real reeds.
+        var amp = (1.1 + strength * 6.5) * (0.55 + tall * 0.9) * (0.7 + Math.random() * 0.6);
+        var dur = (2.6 - strength * 1.55) * (0.8 + tall * 0.55) * (0.8 + Math.random() * 0.45);
+        blades += "<path class='blade' d='" + bladePath(x, height, bh, bw, lean) +
+          "' fill='url(#bladeLight)' style='--a:" + (-amp).toFixed(2) + "deg;--b:" +
+          amp.toFixed(2) + "deg;animation-duration:" + dur.toFixed(2) +
+          "s;animation-delay:-" + (Math.random() * 4).toFixed(2) + "s'></path>";
+      }
+      host.innerHTML =
+        "<svg viewBox='0 0 " + width + " " + height + "' preserveAspectRatio='none'>" +
+        "<defs><linearGradient id='bladeLight' x1='0' y1='1' x2='0' y2='0'>" +
+        "<stop offset='0%' stop-color='#000'></stop>" +
+        "<stop offset='55%' stop-color='#000'></stop>" +
+        "<stop id='bladeTip' offset='100%' stop-color='#000'></stop>" +
+        "</linearGradient></defs>" + blades + "</svg>";
+    }
+
+    // Tips pick up whichever body is lighting the scene.
+    function lightGrass(rgb, amount) {
+      var tip = document.getElementById("bladeTip");
+      if (!tip) return;
+      tip.setAttribute("stop-color", "rgb(" + rgb + ")");
+      tip.setAttribute("stop-opacity", Math.max(0, Math.min(0.55, amount)).toFixed(3));
+    }
+
     function mix(a, b, t) {
       return [
         Math.round(a[0] + (b[0] - a[0]) * t),
@@ -749,6 +832,16 @@
       var cover = parseFloat(lastWeather.cloudcover);
       document.getElementById("clouds").style.opacity =
         isNaN(cover) ? "0" : (Math.min(1, cover / 100) * 0.85).toFixed(3);
+
+      var wind = parseFloat(lastWeather.wind_mph);
+      buildGrass(isNaN(wind) ? 5 : wind);
+      if (sunElev >= moonElev && sunElev > 0.02) {
+        lightGrass("255, 168, 76", 0.15 + sunElev * 0.40);
+      } else if (moonElev > 0.02) {
+        lightGrass("150, 185, 235", 0.06 + moonElev * 0.22);
+      } else {
+        lightGrass("0, 0, 0", 0);
+      }
     }
 
     function showDaylight() {
