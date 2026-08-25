@@ -258,29 +258,6 @@
       border-radius: 50%;
       background: #fff;
     }
-    /* Silhouetted reeds standing on the horizon. Inside .sky, so bodies set
-       behind them, and masked at the sides to match the horizon line's fade. */
-    .grass {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 92px;
-      pointer-events: none;
-      -webkit-mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent);
-      mask-image: linear-gradient(to right, transparent, #000 16%, #000 84%, transparent);
-    }
-    .grass svg { display: block; width: 100%; height: 100%; }
-    .blade {
-      transform-box: fill-box;
-      transform-origin: 50% 100%;
-      animation: blade-sway ease-in-out infinite alternate;
-    }
-    @keyframes blade-sway {
-      from { transform: rotate(var(--a)); }
-      to { transform: rotate(var(--b)); }
-    }
-
     .cloud {
       position: absolute;
       border-radius: 50%;
@@ -339,7 +316,6 @@
     }
 
     .horizon {
-      display: none;
       position: fixed;
       left: 0;
       right: 0;
@@ -348,16 +324,6 @@
       z-index: 2;
       pointer-events: none;
       background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.16) 18%, rgba(255, 255, 255, 0.16) 82%, transparent);
-    }
-    .horizon-haze {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 130px;
-      pointer-events: none;
-      -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-      mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
     }
 
     /* Deploy timestamp (desktop only) */
@@ -419,8 +385,6 @@
       .top-search { margin-top: 10px; }
       .search-bar input { font-size: 14px; padding: 10px 16px; }
       .last-updated { display: none; }
-      .horizon { display: block; }
-      .horizon-haze { display: none; }
     }
   </style>
 </head>
@@ -478,8 +442,6 @@
     <div class="sky-body sun" id="sun"></div>
     <div class="sky-body moon" id="moon"><div class="moon-shadow" id="moonShadow"></div></div>
     <div class="sky-layer clouds" id="clouds"></div>
-    <div class="horizon-haze" id="horizonHaze"></div>
-    <div class="grass" id="grass"></div>
   </div>
   <div class="horizon"></div>
 
@@ -735,105 +697,6 @@
       host.innerHTML = html;
     }
 
-    // Rebuilt only when the width or the wind materially changes, since a
-    // rebuild re-randomises the sway phases and would otherwise visibly pop.
-    var grassState = { width: 0, wind: null };
-
-    // Blades are cubic curves, not spikes: they rise, arc over and taper.
-    // "bend" is signed horizontal drift of the tip, scaled by height, so tall
-    // blades droop further than short ones.
-    function bladePath(x, base, height, width, bend) {
-      var drift = bend * height * 0.55;
-      var tipX = x + drift;
-      // Drooping costs vertical reach, the way a real blade folds over.
-      var tipY = base - height * (1 - Math.abs(bend) * 0.17);
-      var midX = x + drift * 0.28;
-      var midY = base - height * 0.54;
-      return "M" + (x - width).toFixed(1) + "," + base +
-        " C" + (midX - width * 0.78).toFixed(1) + "," + midY.toFixed(1) +
-        " " + (tipX - width * 0.55).toFixed(1) + "," + (base - height * 0.86).toFixed(1) +
-        " " + tipX.toFixed(1) + "," + tipY.toFixed(1) +
-        " C" + (tipX + width * 0.5).toFixed(1) + "," + (base - height * 0.83).toFixed(1) +
-        " " + (midX + width * 0.85).toFixed(1) + "," + (midY + height * 0.05).toFixed(1) +
-        " " + (x + width).toFixed(1) + "," + base + " Z";
-    }
-
-    // Three tip gradients rather than one: if every blade catches light
-    // identically the highlights line up and read as a row of pins.
-    function bladeDefs() {
-      var out = "";
-      for (var i = 0; i < 3; i++) {
-        out += "<linearGradient id='bladeLight" + i + "' x1='0' y1='1' x2='0' y2='0'>" +
-          "<stop offset='0%' stop-color='#000'></stop>" +
-          "<stop offset='" + (48 + i * 12) + "%' stop-color='#000'></stop>" +
-          "<stop id='bladeTip" + i + "' offset='100%' stop-color='#000'></stop>" +
-          "</linearGradient>";
-      }
-      return "<defs>" + out + "</defs>";
-    }
-
-    function bladeLayer(cfg, width, height, strength) {
-      var out = "";
-      for (var i = 0; i < cfg.count; i++) {
-        // Jitter past neighbouring slots so blades clump and leave gaps
-        // instead of sitting on an even pitch.
-        var x = ((i + (Math.random() - 0.5) * 1.9) / cfg.count) * width;
-        var tall = Math.random();
-        var bh = height * (cfg.minH + tall * (cfg.maxH - cfg.minH));
-        var bw = (1.0 + Math.random() * 1.9) * cfg.widthMul;
-        // Wind biases every blade the same way; the rest is individual lean.
-        var bend = (Math.random() - 0.5) * 0.5 + strength * 0.8 * (0.5 + Math.random() * 0.7);
-        bend *= 0.45 + tall * 0.85;
-        var amp = (1.1 + strength * 6.5) * (0.5 + tall * 0.95) *
-          (0.7 + Math.random() * 0.6) * cfg.ampMul;
-        var dur = (2.6 - strength * 1.55) * (0.8 + tall * 0.6) *
-          (0.8 + Math.random() * 0.45) * cfg.durMul;
-        var grad = Math.random() < cfg.litChance ? (Math.random() < 0.55 ? 0 : 1) : 2;
-        out += "<path class='blade' d='" + bladePath(x, height, bh, bw, bend) +
-          "' fill='url(#bladeLight" + grad + ")' opacity='" + cfg.opacity +
-          "' style='--a:" + (-amp).toFixed(2) + "deg;--b:" + amp.toFixed(2) +
-          "deg;animation-duration:" + dur.toFixed(2) + "s;animation-delay:-" +
-          (Math.random() * 5).toFixed(2) + "s'></path>";
-      }
-      return out;
-    }
-
-    function buildGrass(wind) {
-      var host = document.getElementById("grass");
-      var width = host.clientWidth;
-      if (!width) return;
-      if (width === grassState.width && grassState.wind !== null &&
-          Math.abs(wind - grassState.wind) < 2) return;
-      grassState = { width: width, wind: wind };
-
-      var height = host.clientHeight;
-      var strength = Math.min(1, wind / 25);
-      // Back rank sits lower and dimmer, so the front rank reads as nearer.
-      var back = bladeLayer({
-        count: Math.max(24, Math.round(width / 6)), minH: 0.20, maxH: 0.56,
-        widthMul: 0.8, ampMul: 0.5, durMul: 1.3, opacity: 0.55, litChance: 0.18
-      }, width, height, strength);
-      var front = bladeLayer({
-        count: Math.max(16, Math.round(width / 10)), minH: 0.46, maxH: 1.0,
-        widthMul: 1.3, ampMul: 1.0, durMul: 1.0, opacity: 1, litChance: 0.7
-      }, width, height, strength);
-
-      host.innerHTML = "<svg viewBox='0 0 " + width + " " + height +
-        "' preserveAspectRatio='none'>" + bladeDefs() + back + front + "</svg>";
-    }
-
-    // Distant blades catch far less light than near ones.
-    function lightGrass(rgb, amount) {
-      var scale = [1, 0.5, 0.16];
-      for (var i = 0; i < 3; i++) {
-        var tip = document.getElementById("bladeTip" + i);
-        if (!tip) continue;
-        tip.setAttribute("stop-color", "rgb(" + rgb + ")");
-        tip.setAttribute("stop-opacity",
-          Math.max(0, Math.min(0.55, amount * scale[i])).toFixed(3));
-      }
-    }
-
     function mix(a, b, t) {
       return [
         Math.round(a[0] + (b[0] - a[0]) * t),
@@ -886,24 +749,6 @@
       var cover = parseFloat(lastWeather.cloudcover);
       document.getElementById("clouds").style.opacity =
         isNaN(cover) ? "0" : (Math.min(1, cover / 100) * 0.85).toFixed(3);
-
-      var wind = parseFloat(lastWeather.wind_mph);
-      buildGrass(isNaN(wind) ? 5 : wind);
-
-      var lightRgb = "0, 0, 0";
-      var lightAmt = 0;
-      if (sunElev >= moonElev && sunElev > 0.02) {
-        lightRgb = "255, 168, 76";
-        lightAmt = 0.15 + sunElev * 0.40;
-      } else if (moonElev > 0.02) {
-        lightRgb = "150, 185, 235";
-        lightAmt = 0.06 + moonElev * 0.22;
-      }
-      lightGrass(lightRgb, lightAmt);
-      // Same source, much weaker, pooling at the base of the reeds.
-      document.getElementById("horizonHaze").style.background =
-        "linear-gradient(to top, rgba(" + lightRgb + ", " + (lightAmt * 0.34).toFixed(3) +
-        "), rgba(" + lightRgb + ", " + (lightAmt * 0.10).toFixed(3) + ") 45%, transparent)";
     }
 
     function showDaylight() {
