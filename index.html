@@ -236,11 +236,38 @@
     }
 
     /* Sun and moon tracked across a horizon. Replaces the background gif. */
-    .ambient {
-      position: fixed;
+    /* Every atmospheric layer lives inside .sky so it clips at the horizon
+       and stays a contained scene rather than washing the whole page. */
+    .sky-layer {
+      position: absolute;
       inset: 0;
-      z-index: 0;
       pointer-events: none;
+    }
+    /* Fades out toward the top and sides so the scene has no box edges. */
+    .sky-wash {
+      transition: background 8s linear;
+    }
+    .stars, .clouds {
+      -webkit-mask-image: radial-gradient(ellipse 80% 88% at 50% 100%, #000 32%, transparent 78%);
+      mask-image: radial-gradient(ellipse 80% 88% at 50% 100%, #000 32%, transparent 78%);
+      opacity: 0;
+      transition: opacity 6s linear;
+    }
+    .star {
+      position: absolute;
+      border-radius: 50%;
+      background: #fff;
+    }
+    .cloud {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      filter: blur(30px);
+      animation: cloud-drift linear infinite;
+    }
+    @keyframes cloud-drift {
+      from { transform: translateX(-40vw); }
+      to { transform: translateX(140vw); }
     }
     .sky {
       position: fixed;
@@ -408,10 +435,13 @@
     </div>
   </div>
 
-  <div class="ambient" id="ambient"></div>
   <div class="sky" id="sky">
+    <div class="sky-layer sky-wash" id="skyWash"></div>
+    <div class="sky-layer stars" id="stars"></div>
+    <div class="sky-layer sky-glow" id="ambient"></div>
     <div class="sky-body sun" id="sun"></div>
     <div class="sky-body moon" id="moon"><div class="moon-shadow" id="moonShadow"></div></div>
+    <div class="sky-layer clouds" id="clouds"></div>
   </div>
   <div class="horizon"></div>
 
@@ -639,6 +669,50 @@
         alpha + "), transparent 70%)";
     }
 
+    // Built once. Stars sit in the upper reaches; the mask fades the edges.
+    function buildStars() {
+      var host = document.getElementById("stars");
+      if (host.childElementCount) return;
+      var html = "";
+      for (var i = 0; i < 70; i++) {
+        var size = (Math.random() * 1.6 + 0.7).toFixed(2);
+        html += "<span class='star' style='left:" + (Math.random() * 100).toFixed(2) +
+          "%;top:" + (Math.random() * 78).toFixed(2) + "%;width:" + size + "px;height:" +
+          size + "px;opacity:" + (Math.random() * 0.55 + 0.35).toFixed(2) + "'></span>";
+      }
+      host.innerHTML = html;
+    }
+
+    function buildClouds() {
+      var host = document.getElementById("clouds");
+      if (host.childElementCount) return;
+      var html = "";
+      for (var i = 0; i < 5; i++) {
+        var w = Math.round(Math.random() * 180 + 200);
+        html += "<span class='cloud' style='left:0;top:" + (Math.random() * 55 + 8).toFixed(1) +
+          "%;width:" + w + "px;height:" + Math.round(w * 0.32) + "px;animation-duration:" +
+          Math.round(Math.random() * 90 + 130) + "s;animation-delay:-" +
+          Math.round(Math.random() * 120) + "s'></span>";
+      }
+      host.innerHTML = html;
+    }
+
+    function mix(a, b, t) {
+      return [
+        Math.round(a[0] + (b[0] - a[0]) * t),
+        Math.round(a[1] + (b[1] - a[1]) * t),
+        Math.round(a[2] + (b[2] - a[2]) * t)
+      ].join(", ");
+    }
+
+    // A dome of colour rising from the horizon, so it reads as sky behind the
+    // scene rather than a tinted page. Warmest at dawn and dusk.
+    function washFor(sunUp, sunElev) {
+      if (!sunUp) return { rgb: "26, 38, 74", alpha: 0.34 };
+      var t = Math.min(1, sunElev / 0.35);
+      return { rgb: mix([255, 132, 58], [66, 122, 190], t), alpha: 0.32 - 0.13 * t };
+    }
+
     function updateSky() {
       if (!lastWeather) return;
       var sky = document.getElementById("sky");
@@ -658,6 +732,23 @@
       if (sunElev > 0.02) layers.push(glowLayer(sunEl, sunElev, "255, 168, 76", 0.27));
       if (moonElev > 0.02) layers.push(glowLayer(moonEl, moonElev, "150, 185, 235", 0.15));
       document.getElementById("ambient").style.background = layers.join(", ");
+
+      buildStars();
+      buildClouds();
+
+      var wash = washFor(sunElev > 0, sunElev);
+      document.getElementById("skyWash").style.background =
+        "radial-gradient(ellipse 78% 82% at 50% 100%, rgba(" + wash.rgb + ", " +
+        wash.alpha.toFixed(3) + ") 0%, rgba(" + wash.rgb + ", " +
+        (wash.alpha * 0.35).toFixed(3) + ") 42%, transparent 76%)";
+
+      // Stars retreat quickly once the sun is properly up.
+      document.getElementById("stars").style.opacity =
+        Math.max(0, Math.min(1, 1 - sunElev * 5)).toFixed(3);
+
+      var cover = parseFloat(lastWeather.cloudcover);
+      document.getElementById("clouds").style.opacity =
+        isNaN(cover) ? "0" : (Math.min(1, cover / 100) * 0.85).toFixed(3);
     }
 
     function showDaylight() {

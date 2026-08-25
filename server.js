@@ -92,6 +92,7 @@ function fetchWeather() {
             moonset: astro.moonset,
             moon_phase: astro.moon_phase,
             moon_illumination: astro.moon_illumination,
+            cloudcover: current.cloudcover,
           };
           weatherCache = { data: result, fetchedAt: Date.now() };
           resolve(result);
