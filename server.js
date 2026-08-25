@@ -88,6 +88,10 @@ function fetchWeather() {
             uv_index: current.uvIndex,
             sunrise: astro.sunrise,
             sunset: astro.sunset,
+            moonrise: astro.moonrise,
+            moonset: astro.moonset,
+            moon_phase: astro.moon_phase,
+            moon_illumination: astro.moon_illumination,
           };
           weatherCache = { data: result, fetchedAt: Date.now() };
           resolve(result);
