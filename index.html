@@ -259,16 +259,16 @@
       opacity: 0;
     }
     .sun {
-      width: 64px;
-      height: 64px;
+      width: 80px;
+      height: 80px;
       background: radial-gradient(circle at 35% 32%, #fff6da, #ffb347 55%, #ff8c42);
-      box-shadow: 0 0 70px 24px rgba(255, 170, 80, 0.22);
+      box-shadow: 0 0 84px 28px rgba(255, 170, 80, 0.26);
     }
     .moon {
-      width: 44px;
-      height: 44px;
+      width: 58px;
+      height: 58px;
       background: radial-gradient(circle at 35% 32%, #ffffff, #dde1ec 58%, #aab2c4);
-      box-shadow: 0 0 46px 14px rgba(160, 190, 235, 0.14);
+      box-shadow: 0 0 56px 18px rgba(160, 190, 235, 0.17);
       overflow: hidden;
     }
     .moon-shadow {
@@ -586,6 +586,13 @@
       return null;
     }
 
+    // Tallest the arc may reach without a body sliding behind the header.
+    // Measured live because the header grows with the word-of-the-day text.
+    function arcAmplitude(el, skyHeight) {
+      var header = document.querySelector(".top-section").getBoundingClientRect();
+      return Math.max(40, skyHeight - header.bottom - 24 - el.offsetWidth / 2);
+    }
+
     // Returns elevation 0..1 so the caller can scale the ambient light.
     function placeSkyBody(el, progress, skyHeight) {
       if (progress === null) {
@@ -594,7 +601,7 @@
       }
       var elevation = Math.sin(progress * Math.PI);
       el.style.left = (8 + progress * 84) + "%";
-      el.style.bottom = (elevation * (skyHeight - 90)) + "px";
+      el.style.bottom = (elevation * arcAmplitude(el, skyHeight)) + "px";
       // Fade out near the horizon so rising and setting don't pop.
       el.style.opacity = String(Math.min(1, Math.max(0, elevation * 8)));
       return elevation;
@@ -637,8 +644,8 @@
       if (lastWeather.moonrise) shapeMoon();
 
       var layers = [];
-      if (sunElev > 0.02) layers.push(glowLayer(sunEl, sunElev, "255, 168, 76", 0.20));
-      if (moonElev > 0.02) layers.push(glowLayer(moonEl, moonElev, "150, 185, 235", 0.10));
+      if (sunElev > 0.02) layers.push(glowLayer(sunEl, sunElev, "255, 168, 76", 0.27));
+      if (moonElev > 0.02) layers.push(glowLayer(moonEl, moonElev, "150, 185, 235", 0.15));
       document.getElementById("ambient").style.background = layers.join(", ");
     }
 
