@@ -216,6 +216,35 @@
       color: rgba(255, 255, 255, 0.45);
       font-size: 13px;
     }
+    .medterm {
+      margin-top: 12px;
+      max-width: 520px;
+      margin-left: auto;
+      margin-right: auto;
+      line-height: 1.5;
+    }
+    .medterm-label {
+      display: block;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: rgba(255, 255, 255, 0.28);
+      margin-bottom: 3px;
+    }
+    .medterm-term {
+      color: rgba(255, 255, 255, 0.78);
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: 0.3px;
+    }
+    .medterm-def {
+      display: block;
+      margin-top: 2px;
+      color: rgba(255, 255, 255, 0.42);
+      font-size: 12px;
+    }
+    .medterm:empty { display: none; }
+
     .top-search {
       margin-top: 16px;
     }
@@ -382,6 +411,9 @@
       .wotd { margin-top: 8px; }
       .wotd-word { font-size: 14px; }
       .wotd-def { font-size: 11px; }
+      .medterm { margin-top: 8px; }
+      .medterm-term { font-size: 13px; }
+      .medterm-def { font-size: 10px; }
       .top-search { margin-top: 10px; }
       .search-bar input { font-size: 14px; padding: 10px 16px; }
       .last-updated { display: none; }
@@ -394,6 +426,7 @@
   <div class="top-section">
     <div class="page-title">Cael's Page</div>
     <div class="wotd" id="wotd"></div>
+    <div class="medterm" id="medterm"></div>
     <div class="top-search">
       <div class="search-bar">
         <form id="searchForm" action="https://www.google.com/search" method="GET">
@@ -781,6 +814,35 @@
       if (uv >= 3) return "Moderate";
       return "Low";
     }
+
+    function loadMedTerm() {
+      fetch("/api/medterm")
+        .then(function(res) { return res.json(); })
+        .then(function(m) {
+          if (m.error || !m.term) return;
+          var host = document.getElementById("medterm");
+          host.innerHTML = "";
+          // Built as text nodes, not markup: the definition is third-party copy.
+          var label = document.createElement("span");
+          label.className = "medterm-label";
+          label.textContent = "Step 2";
+          var term = document.createElement("span");
+          term.className = "medterm-term";
+          term.textContent = m.term;
+          host.appendChild(label);
+          host.appendChild(term);
+          if (m.definition) {
+            var def = document.createElement("span");
+            def.className = "medterm-def";
+            def.textContent = m.definition;
+            host.appendChild(def);
+          }
+        })
+        .catch(function() {});
+    }
+    loadMedTerm();
+    // Catches the local-midnight rollover on a page left open overnight.
+    setInterval(loadMedTerm, 60 * 60 * 1000);
 
     function loadWeather() {
       fetch("/api/weather")
