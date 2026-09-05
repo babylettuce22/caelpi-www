@@ -60,9 +60,9 @@ function fetchWotd() {
 // Fetch on startup
 fetchWotd().catch(() => {});
 
-// Medical term of the day. The rotation list is curated locally so the terms
-// stay relevant to Step 2; Wikipedia only supplies the prose.
-const WIKI_UA = "caelpi-www/1.0 (personal homepage; +https://github.com/babylettuce22)";
+// Medical term of the day. The pearls are authored locally rather than
+// fetched: encyclopedia summaries define a disease, which is not what Step 2
+// asks. No upstream call, so nothing here can fail or rate-limit.
 const MEDTERMS = (function () {
   try {
     return JSON.parse(fs.readFileSync(path.join(__dirname, "medterms.json"), "utf8"));
@@ -70,40 +70,11 @@ const MEDTERMS = (function () {
     return [];
   }
 })();
-let medtermCache = { data: null, day: null };
 
 // Local-date day number, so the term turns over at local midnight.
 function localDayNumber() {
   const now = new Date();
   return Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86400000);
-}
-
-// Wikipedia extracts run long; keep whole sentences and cut the rest.
-function trimToSentence(text, max) {
-  const clean = String(text || "").trim();
-  if (clean.length <= max) return clean;
-  const cut = clean.slice(0, max);
-  const stop = cut.lastIndexOf(". ");
-  return stop > 80 ? cut.slice(0, stop + 1) : cut.trim() + "...";
-}
-
-function fetchWikiSummary(title) {
-  return new Promise((resolve, reject) => {
-    const route = "/api/rest_v1/page/summary/" +
-      encodeURIComponent(String(title).replace(/ /g, "_"));
-    https.get({
-      host: "en.wikipedia.org",
-      path: route,
-      headers: { "User-Agent": WIKI_UA, Accept: "application/json" },
-    }, (res) => {
-      let body = "";
-      res.on("data", (chunk) => (body += chunk));
-      res.on("end", () => {
-        if (res.statusCode !== 200) return reject(new Error("wiki " + res.statusCode));
-        try { resolve(JSON.parse(body)); } catch (err) { reject(err); }
-      });
-    }).on("error", reject);
-  });
 }
 
 // Weather cache
@@ -437,27 +408,9 @@ async function handleApi(req, res, wss) {
   }
 
   if (pathname === "/api/medterm" && method === "GET") {
-    try {
-      const day = localDayNumber();
-      // One upstream call per day, so Wikipedia sees a trickle, not a poll.
-      if (medtermCache.data && medtermCache.day === day) {
-        return json(res, medtermCache.data);
-      }
-      if (!MEDTERMS.length) return json(res, { error: "No terms loaded" }, 503);
-      const entry = MEDTERMS[day % MEDTERMS.length];
-      const page = await fetchWikiSummary(entry.wiki || entry.term);
-      const result = {
-        term: entry.term,
-        definition: trimToSentence(page.extract, 240),
-        url: page.content_urls && page.content_urls.desktop
-          ? page.content_urls.desktop.page : null,
-      };
-      medtermCache = { data: result, day: day };
-      return json(res, result);
-    } catch {
-      if (medtermCache.data) return json(res, medtermCache.data);
-      return json(res, { error: "Term unavailable" }, 502);
-    }
+    if (!MEDTERMS.length) return json(res, { error: "No terms loaded" }, 503);
+    const entry = MEDTERMS[localDayNumber() % MEDTERMS.length];
+    return json(res, entry);
   }
 
   if (pathname === "/api/wotd" && method === "GET") {

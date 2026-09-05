@@ -237,11 +237,21 @@
       font-size: 15px;
       letter-spacing: 0.3px;
     }
-    .medterm-def {
+    .medterm-pearl {
       display: block;
-      margin-top: 2px;
-      color: rgba(255, 255, 255, 0.42);
+      margin-top: 3px;
+      color: rgba(255, 255, 255, 0.5);
       font-size: 12px;
+    }
+    .medterm-buzz {
+      display: block;
+      margin-top: 4px;
+      padding-left: 10px;
+      border-left: 1px solid rgba(255, 255, 255, 0.14);
+      color: rgba(255, 255, 255, 0.36);
+      font-size: 11px;
+      font-style: italic;
+      text-align: left;
     }
     .medterm:empty { display: none; }
 
@@ -413,7 +423,8 @@
       .wotd-def { font-size: 11px; }
       .medterm { margin-top: 8px; }
       .medterm-term { font-size: 13px; }
-      .medterm-def { font-size: 10px; }
+      .medterm-pearl { font-size: 10px; }
+      .medterm-buzz { font-size: 10px; padding-left: 8px; }
       .top-search { margin-top: 10px; }
       .search-bar input { font-size: 14px; padding: 10px 16px; }
       .last-updated { display: none; }
@@ -822,21 +833,16 @@
           if (m.error || !m.term) return;
           var host = document.getElementById("medterm");
           host.innerHTML = "";
-          // Built as text nodes, not markup: the definition is third-party copy.
-          var label = document.createElement("span");
-          label.className = "medterm-label";
-          label.textContent = "Step 2";
-          var term = document.createElement("span");
-          term.className = "medterm-term";
-          term.textContent = m.term;
-          host.appendChild(label);
-          host.appendChild(term);
-          if (m.definition) {
-            var def = document.createElement("span");
-            def.className = "medterm-def";
-            def.textContent = m.definition;
-            host.appendChild(def);
+          function row(cls, text) {
+            var el = document.createElement("span");
+            el.className = cls;
+            el.textContent = text;
+            host.appendChild(el);
           }
+          row("medterm-label", (m.sys || "Step 2") + " · Step 2");
+          row("medterm-term", m.term);
+          if (m.pearl) row("medterm-pearl", m.pearl);
+          if (m.buzz) row("medterm-buzz", m.buzz);
         })
         .catch(function() {});
     }
