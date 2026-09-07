@@ -222,7 +222,18 @@
       margin-left: auto;
       margin-right: auto;
       line-height: 1.5;
+      cursor: pointer;
+      outline: none;
     }
+    .medterm:hover .medterm-term,
+    .medterm:focus-visible .medterm-term { color: rgba(255, 255, 255, 0.95); }
+    /* Affordance for the collapsed state, since a phone has no hover. */
+    .medterm-label::after {
+      content: "+";
+      margin-left: 6px;
+      opacity: 0.65;
+    }
+    .medterm.is-open .medterm-label::after { content: "-"; }
     .medterm-label {
       display: block;
       font-size: 9px;
@@ -238,13 +249,21 @@
       letter-spacing: 0.3px;
     }
     .medterm-pearl {
-      display: block;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
       margin-top: 3px;
       color: rgba(255, 255, 255, 0.5);
       font-size: 12px;
     }
-    .medterm-buzz {
+    .medterm.is-open .medterm-pearl {
       display: block;
+      -webkit-line-clamp: unset;
+      overflow: visible;
+    }
+    .medterm-buzz {
+      display: none;
       margin-top: 4px;
       padding-left: 10px;
       border-left: 1px solid rgba(255, 255, 255, 0.14);
@@ -253,6 +272,7 @@
       font-style: italic;
       text-align: left;
     }
+    .medterm.is-open .medterm-buzz { display: block; }
     .medterm:empty { display: none; }
 
     .top-search {
@@ -437,7 +457,7 @@
   <div class="top-section">
     <div class="page-title">Cael's Page</div>
     <div class="wotd" id="wotd"></div>
-    <div class="medterm" id="medterm"></div>
+    <div class="medterm" id="medterm" role="button" tabindex="0" aria-expanded="false"></div>
     <div class="top-search">
       <div class="search-bar">
         <form id="searchForm" action="https://www.google.com/search" method="GET">
@@ -833,6 +853,8 @@
           if (m.error || !m.term) return;
           var host = document.getElementById("medterm");
           host.innerHTML = "";
+          host.classList.remove("is-open");
+          host.setAttribute("aria-expanded", "false");
           function row(cls, text) {
             var el = document.createElement("span");
             el.className = cls;
@@ -847,6 +869,21 @@
         .catch(function() {});
     }
     loadMedTerm();
+
+    (function () {
+      var host = document.getElementById("medterm");
+      function toggleMedTerm() {
+        var open = host.classList.toggle("is-open");
+        host.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+      host.addEventListener("click", toggleMedTerm);
+      host.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggleMedTerm();
+        }
+      });
+    })();
     // Catches the local-midnight rollover on a page left open overnight.
     setInterval(loadMedTerm, 60 * 60 * 1000);
 
