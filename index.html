@@ -777,6 +777,18 @@
       return { rgb: mix([255, 132, 58], [66, 122, 190], t), alpha: 0.32 - 0.13 * t };
     }
 
+    // How much of the moon actually survives the daylight. A thin crescent
+    // vanishes against a bright sky while a full moon stays faintly visible,
+    // so this scales on both sky brightness and lit fraction. Returns 1 once
+    // the sun is down, which leaves night rendering untouched.
+    function moonVisibility(sunElev, illumination) {
+      var illum = parseFloat(illumination);
+      if (isNaN(illum)) illum = 50;
+      var lit = Math.min(1, Math.max(0, illum / 100));
+      var wash = Math.pow(Math.max(0, sunElev), 0.7) * (1.05 - 0.6 * lit);
+      return Math.min(1, Math.max(0, 1 - wash));
+    }
+
     function updateSky() {
       if (!lastWeather) return;
       var sky = document.getElementById("sky");
@@ -790,11 +802,18 @@
         ? placeSkyBody(moonEl, skyProgress(lastWeather.moonrise, lastWeather.moonset, now), height)
         : placeSkyBody(moonEl, null, height);
 
+      // Position is already right; this is whether the eye could pick it out.
+      var moonSeen = moonVisibility(sunElev, lastWeather.moon_illumination);
+      moonEl.style.opacity = (parseFloat(moonEl.style.opacity || 0) * moonSeen).toFixed(3);
+
       if (lastWeather.moonrise) shapeMoon();
 
       var layers = [];
       if (sunElev > 0.02) layers.push(glowLayer(sunEl, sunElev, "255, 168, 76", 0.27));
-      if (moonElev > 0.02) layers.push(glowLayer(moonEl, moonElev, "150, 185, 235", 0.15));
+      // Dim the halo too, so a washed-out moon stops competing with the sun.
+      if (moonElev * moonSeen > 0.02) {
+        layers.push(glowLayer(moonEl, moonElev * moonSeen, "150, 185, 235", 0.15));
+      }
       document.getElementById("ambient").style.background = layers.join(", ");
 
       buildStars();
