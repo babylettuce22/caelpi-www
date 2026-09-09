@@ -43,6 +43,62 @@ function isAdminAuthed(req) {
   return adminSessions.has(cookies.admin_session);
 }
 
+// claudetrade home-page tile. The trading jobs write claude-trade/stats.json (public numbers only:
+// percentages, counts, flags) beside the private snapshot. Market hours are computed here so the
+// tile stays right between job runs. Full-day NYSE closures mirror claudetrade/data/calendar.py;
+// early closes still count as open days.
+const NYSE_HOLIDAYS = new Set([
+  "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03",
+  "2026-09-07", "2026-11-26", "2026-12-25",
+  "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05",
+  "2027-09-06", "2027-11-25", "2027-12-24",
+  "2028-01-17", "2028-02-21", "2028-04-14", "2028-05-29", "2028-06-19", "2028-07-04", "2028-09-04",
+  "2028-11-23", "2028-12-25",
+]);
+const MARKET_OPEN_MIN = 9 * 60 + 30, MARKET_CLOSE_MIN = 16 * 60;
+const etFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York", hourCycle: "h23", weekday: "short",
+  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+});
+function etParts(d) {
+  const o = {};
+  for (const p of etFmt.formatToParts(d)) o[p.type] = p.value;
+  return { ymd: `${o.year}-${o.month}-${o.day}`, minutes: Number(o.hour) * 60 + Number(o.minute), weekday: o.weekday };
+}
+function isTradingDay(p) {
+  return p.weekday !== "Sat" && p.weekday !== "Sun" && !NYSE_HOLIDAYS.has(p.ymd);
+}
+// The instant of an Eastern wall-clock time: pretend the wall clock is UTC, then correct by the
+// offset Intl reports for that guess (twice, so DST edges settle).
+function etDate(ymd, minutes) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const wall = Date.UTC(y, m - 1, d, 0, minutes);
+  let t = wall;
+  for (let i = 0; i < 2; i++) {
+    const p = etParts(new Date(t));
+    const [py, pm, pd] = p.ymd.split("-").map(Number);
+    t = wall - (Date.UTC(py, pm - 1, pd, 0, p.minutes) - t);
+  }
+  return new Date(t);
+}
+function marketState(now = new Date()) {
+  const p = etParts(now);
+  const tradingDay = isTradingDay(p);
+  const open = tradingDay && p.minutes >= MARKET_OPEN_MIN && p.minutes < MARKET_CLOSE_MIN;
+  let q = p;
+  if (!(tradingDay && p.minutes < MARKET_OPEN_MIN)) {
+    // walk forward from noon ET so a DST change cannot land the step on the same date
+    let d = etDate(p.ymd, 12 * 60);
+    do { d = new Date(d.getTime() + 86400000); q = etParts(d); } while (!isTradingDay(q));
+  }
+  return {
+    open,
+    trading_day: tradingDay,
+    closes_at: open ? etDate(p.ymd, MARKET_CLOSE_MIN).toISOString() : null,
+    next_open: open ? null : etDate(q.ymd, MARKET_OPEN_MIN).toISOString(),
+  };
+}
+
 // Word of the Day cache
 const WORDNIK_KEY = ((readJson(path.join(CONFIG_DIR, "wordnik.json")) || {}).api_key) || "";
 let wotdCache = { data: null, fetchedAt: 0 };
@@ -460,6 +516,21 @@ async function handleApi(req, res, wss) {
       if (weatherCache.data) return json(res, weatherCache.data);
       return json(res, { error: "Weather unavailable" }, 502);
     }
+  }
+
+  if (pathname === "/api/claude-trade" && method === "GET") {
+    const stats = readJson(path.join(__dirname, "claude-trade", "stats.json"));
+    if (!stats) return json(res, { error: "claudetrade stats not generated yet" }, 503);
+    // Real money only: paper-mode numbers never leave the Pi, and the tile stays hidden.
+    if (stats.broker !== "schwab") return json(res, { error: "claudetrade is not trading a real account" }, 404);
+    const out = Object.assign({}, stats, { market: marketState() });
+    if (out.pending_approvals > 0 && out.today && /^\d\d:\d\d$/.test(out.execute_time || "")) {
+      const [h, m] = out.execute_time.split(":").map(Number);
+      out.approval_deadline = etDate(out.today, h * 60 + m).toISOString();
+    }
+    // Dollar figures stay behind the admin login; the percentages are what the public tile shows.
+    if (!isAdminAuthed(req)) delete out.pnl_since_start;
+    return json(res, out);
   }
 
   // --- Admin API (auth required) ---
