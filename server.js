@@ -7,9 +7,25 @@ const { execSync, exec } = require("child_process");
 const WebSocket = require("ws");
 
 // Admin auth
-const ADMIN_CONFIG = path.join(__dirname, "admin-config.json");
-let adminPassword = "caelpi2026";
-try { adminPassword = JSON.parse(fs.readFileSync(ADMIN_CONFIG, "utf8")).password; } catch {}
+// Secrets live OUTSIDE this checkout: the repo is public and the Pi resets it from GitHub every
+// minute, so nothing secret may be tracked here. Default directory ~/caelpi-config (override with
+// CAELPI_CONFIG_DIR):
+//   admin-config.json        {"password": "..."}              read on every login attempt; no file = no admin login
+//   spotify.json             client_id / client_secret / redirect_uri / refresh_token
+//   wordnik.json             {"api_key": "..."}
+//   claude-trade.auth.json   {"user": "...", "password": "..."}
+const CONFIG_DIR = process.env.CAELPI_CONFIG_DIR || path.join(require("os").homedir(), "caelpi-config");
+const ADMIN_CONFIG = path.join(CONFIG_DIR, "admin-config.json");
+
+function readJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+}
+
+// Deliberately no default password: with no config file the admin login never succeeds.
+function readAdminPassword() {
+  const cfg = readJson(ADMIN_CONFIG);
+  return cfg && typeof cfg.password === "string" && cfg.password.length > 0 ? cfg.password : null;
+}
 const adminSessions = new Set();
 
 function generateSession() {
@@ -28,7 +44,7 @@ function isAdminAuthed(req) {
 }
 
 // Word of the Day cache
-const WORDNIK_KEY = "9rab8wb9z15513z8whrpahdak8nfjlqowbt6x4xjrql1w0bqm";
+const WORDNIK_KEY = ((readJson(path.join(CONFIG_DIR, "wordnik.json")) || {}).api_key) || "";
 let wotdCache = { data: null, fetchedAt: 0 };
 const WOTD_TTL = 60 * 60 * 1000; // 1 hour (word changes daily, but check hourly)
 
@@ -125,7 +141,7 @@ function fetchWeather() {
 fetchWeather().catch(() => {});
 
 // --- Spotify ---
-const SPOTIFY_FILE = path.join(__dirname, "spotify.json");
+const SPOTIFY_FILE = path.join(CONFIG_DIR, "spotify.json");
 let spotifyConfig = { client_id: "", client_secret: "", redirect_uri: "", refresh_token: null };
 let spotifyToken = { access_token: null, expiresAt: 0 };
 let spotifyCache = { data: null, fetchedAt: 0 };
@@ -134,7 +150,8 @@ const SPOTIFY_CACHE_TTL = 60 * 1000; // 1 minute
 try { spotifyConfig = JSON.parse(fs.readFileSync(SPOTIFY_FILE, "utf8")); } catch {}
 
 function saveSpotifyConfig() {
-  fs.writeFileSync(SPOTIFY_FILE, JSON.stringify(spotifyConfig, null, 2));
+  fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(SPOTIFY_FILE, JSON.stringify(spotifyConfig, null, 2), { mode: 0o600 });
 }
 
 function httpsPost(url, headers, body) {
@@ -610,12 +627,12 @@ const server = http.createServer(async (req, res) => {
   }
   // claudetrade dashboard: a static snapshot that the trading jobs on this Pi rewrite after every
   // run (claude-trade/index.html, git-ignored). Guarded by its own HTTP Basic credentials, read from
-  // claude-trade.auth.json next to this file (git-ignored, created on the Pi by hand):
+  // claude-trade.auth.json in CONFIG_DIR (created on the Pi by hand):
   //   {"user": "cael", "password": "a long random string"}
   // It deliberately does not reuse the admin session. The live dashboard server on port 8181 is LAN-only.
   if (reqUrl.pathname === "/claude-trade" || reqUrl.pathname === "/claude-trade/") {
-    let auth = null;
-    try { auth = JSON.parse(fs.readFileSync(path.join(__dirname, "claude-trade.auth.json"), "utf8")); } catch {}
+    const auth = readJson(path.join(CONFIG_DIR, "claude-trade.auth.json"))
+      || readJson(path.join(__dirname, "claude-trade.auth.json"));
     if (!auth || !auth.user || !auth.password) {
       res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
       res.end("claude-trade is not configured yet: create claude-trade.auth.json on the Pi");
@@ -670,7 +687,11 @@ const server = http.createServer(async (req, res) => {
       var d = ""; req.on("data", function(c) { d += c; }); req.on("end", function() { resolve(d); });
     });
     var params = new URLSearchParams(raw);
-    if (params.get("password") === adminPassword) {
+    const adminPassword = readAdminPassword();
+    const given = params.get("password") || "";
+    const ok = adminPassword !== null && given.length === adminPassword.length &&
+      crypto.timingSafeEqual(Buffer.from(given), Buffer.from(adminPassword));
+    if (ok) {
       const token = generateSession();
       res.writeHead(302, {
         Location: "/admin",
