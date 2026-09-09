@@ -608,6 +608,46 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+  // claudetrade dashboard: a static snapshot that the trading jobs on this Pi rewrite after every
+  // run (claude-trade/index.html, git-ignored). Guarded by its own HTTP Basic credentials, read from
+  // claude-trade.auth.json next to this file (git-ignored, created on the Pi by hand):
+  //   {"user": "cael", "password": "a long random string"}
+  // It deliberately does not reuse the admin session. The live dashboard server on port 8181 is LAN-only.
+  if (reqUrl.pathname === "/claude-trade" || reqUrl.pathname === "/claude-trade/") {
+    let auth = null;
+    try { auth = JSON.parse(fs.readFileSync(path.join(__dirname, "claude-trade.auth.json"), "utf8")); } catch {}
+    if (!auth || !auth.user || !auth.password) {
+      res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+      res.end("claude-trade is not configured yet: create claude-trade.auth.json on the Pi");
+      return;
+    }
+    const given = Buffer.from(req.headers.authorization || "");
+    const expected = Buffer.from("Basic " + Buffer.from(auth.user + ":" + auth.password).toString("base64"));
+    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+      res.writeHead(401, {
+        "WWW-Authenticate": 'Basic realm="claude-trade", charset="UTF-8"',
+        "Content-Type": "text/plain",
+        "Cache-Control": "no-store",
+      });
+      res.end("login required");
+      return;
+    }
+    let snapshot;
+    try {
+      snapshot = fs.readFileSync(path.join(__dirname, "claude-trade", "index.html"), "utf8");
+    } catch {
+      res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+      res.end("claudetrade snapshot not generated yet; the next trading job writes it");
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex, nofollow",
+    });
+    res.end(snapshot);
+    return;
+  }
   if (reqUrl.pathname === "/admin") {
     if (!isAdminAuthed(req)) {
       res.writeHead(302, { Location: "/admin/login" });

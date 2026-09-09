@@ -1,1 +1,4 @@
 node_modules/
+claude-trade/
+claude-trade.auth.json
+*.bak-*
