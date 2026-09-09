@@ -342,6 +342,12 @@ async function handleApi(req, res, wss) {
 
   if (method === "OPTIONS") return cors(res);
 
+  // Reads are public; every write (status, notes, links, admin) needs the admin session.
+  // The site is public and data.json lives on the Pi, so nothing may be writable anonymously.
+  if (method !== "GET" && !isAdminAuthed(req)) {
+    return json(res, { error: "Unauthorized" }, 401);
+  }
+
   if (pathname === "/api/status" && method === "GET") {
     return json(res, store.status);
   }
