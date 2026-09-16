@@ -3,7 +3,7 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { execSync, exec } = require("child_process");
+const { execSync, exec, execFile } = require("child_process");
 const WebSocket = require("ws");
 
 // Admin auth
@@ -13,7 +13,7 @@ const WebSocket = require("ws");
 //   admin-config.json        {"password": "..."}              read on every login attempt; no file = no admin login
 //   spotify.json             client_id / client_secret / redirect_uri / refresh_token
 //   wordnik.json             {"api_key": "..."}
-//   claude-trade.auth.json   {"user": "...", "password": "..."}
+//   claude-trade.auth.json   {"user": "...", "password": "..."}   also optional "bin"/"cwd" (see below)
 const CONFIG_DIR = process.env.CAELPI_CONFIG_DIR || path.join(require("os").homedir(), "caelpi-config");
 const ADMIN_CONFIG = path.join(CONFIG_DIR, "admin-config.json");
 
@@ -41,6 +41,112 @@ function isAdminAuthed(req) {
     return acc;
   }, {});
   return adminSessions.has(cookies.admin_session);
+}
+
+// claudetrade sign-in. Schwab's refresh token dies every 7 days and only a person can renew it, so
+// /claude-trade/login serves a phone-sized page that asks the trading agent on this Pi for an
+// authorization URL and pipes the address Schwab redirects to back into it. This site never holds
+// the token: claudetrade writes it. Override the paths with "bin" and "cwd" in claude-trade.auth.json.
+const CLAUDETRADE_HOME = path.join(require("os").homedir(), "claudetrade");
+
+function claudeTradeConfig() {
+  const c = readJson(path.join(CONFIG_DIR, "claude-trade.auth.json"))
+    || readJson(path.join(__dirname, "claude-trade.auth.json")) || {};
+  return {
+    user: c.user, password: c.password,
+    bin: c.bin || path.join(CLAUDETRADE_HOME, ".venv", "bin", "claudetrade"),
+    cwd: c.cwd || CLAUDETRADE_HOME,
+  };
+}
+
+// The dashboard's own HTTP Basic credentials, deliberately not the admin session. Returns false
+// having already answered the request.
+function claudeTradeAuthed(req, res) {
+  const conf = claudeTradeConfig();
+  if (!conf.user || !conf.password) {
+    res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+    res.end("claude-trade is not configured yet: create claude-trade.auth.json on the Pi");
+    return false;
+  }
+  const given = Buffer.from(req.headers.authorization || "");
+  const expected = Buffer.from("Basic " + Buffer.from(conf.user + ":" + conf.password).toString("base64"));
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+    res.writeHead(401, {
+      "WWW-Authenticate": 'Basic realm="claude-trade", charset="UTF-8"',
+      "Content-Type": "text/plain",
+      "Cache-Control": "no-store",
+    });
+    res.end("login required");
+    return false;
+  }
+  return true;
+}
+
+// Run one half of `claudetrade login` and return the JSON it prints. The redirect address goes in
+// on stdin, so the single-use code it carries never appears in the process list.
+function claudetradeLogin(args, stdin) {
+  return new Promise(function(resolve) {
+    const conf = claudeTradeConfig();
+    if (!fs.existsSync(conf.bin)) {
+      resolve({ error: "the trading agent is not installed where this site expects it" });
+      return;
+    }
+    const child = execFile(conf.bin, args, { cwd: conf.cwd, timeout: 90000, maxBuffer: 1 << 20 },
+      function(err, stdout) {
+        const lines = String(stdout || "").trim().split("\n");
+        try {
+          resolve(JSON.parse(lines[lines.length - 1]));
+        } catch {
+          resolve({ error: err && err.killed ? "the sign-in helper timed out"
+                                             : "the sign-in helper could not be run" });
+        }
+      });
+    child.stdin.end(stdin === undefined ? "" : stdin + "\n");
+  });
+}
+
+// Days left on the refresh token. Reads the creation timestamp only; the token itself is never
+// read here and never leaves the Pi.
+function claudeTradeTokenDays() {
+  const t = readJson(path.join(claudeTradeConfig().cwd, "data", "token.json"));
+  if (!t || typeof t.creation_timestamp !== "number") return null;
+  return 7 - (Date.now() / 1000 - t.creation_timestamp) / 86400;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function(c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function renderClaudeTradeLogin(res, opts) {
+  const days = claudeTradeTokenDays();
+  const status = days === null ? "No token on file yet."
+    : days > 0 ? "The token on the Pi expires in " + days.toFixed(1) + " days."
+    : "The token on the Pi expired " + Math.abs(days).toFixed(1) + " days ago.";
+  const banner = opts.banner
+    ? '<div class="banner ' + (opts.ok ? "ok" : "bad") + '">' + escapeHtml(opts.banner) + "</div>" : "";
+  const link = opts.authUrl
+    ? '<a class="button" href="' + escapeHtml(opts.authUrl) + '" target="_blank" rel="noopener">Sign in at Schwab</a>'
+    : '<a class="button" href="/claude-trade/login">Start again</a>';
+  let page;
+  try {
+    page = fs.readFileSync(path.join(__dirname, "claude-trade-login.html"), "utf8");
+  } catch {
+    res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+    res.end("the sign-in page is missing from this checkout");
+    return;
+  }
+  page = page
+    .replace("{{STATUS}}", function() { return escapeHtml(status); })
+    .replace("{{BANNER}}", function() { return banner; })
+    .replace("{{LINK}}", function() { return link; });
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Robots-Tag": "noindex, nofollow",
+  });
+  res.end(page);
 }
 
 // claudetrade home-page tile. The trading jobs write claude-trade/stats.json (public numbers only:
@@ -708,24 +814,7 @@ const server = http.createServer(async (req, res) => {
   //   {"user": "cael", "password": "a long random string"}
   // It deliberately does not reuse the admin session. The live dashboard server on port 8181 is LAN-only.
   if (reqUrl.pathname === "/claude-trade" || reqUrl.pathname === "/claude-trade/") {
-    const auth = readJson(path.join(CONFIG_DIR, "claude-trade.auth.json"))
-      || readJson(path.join(__dirname, "claude-trade.auth.json"));
-    if (!auth || !auth.user || !auth.password) {
-      res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
-      res.end("claude-trade is not configured yet: create claude-trade.auth.json on the Pi");
-      return;
-    }
-    const given = Buffer.from(req.headers.authorization || "");
-    const expected = Buffer.from("Basic " + Buffer.from(auth.user + ":" + auth.password).toString("base64"));
-    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
-      res.writeHead(401, {
-        "WWW-Authenticate": 'Basic realm="claude-trade", charset="UTF-8"',
-        "Content-Type": "text/plain",
-        "Cache-Control": "no-store",
-      });
-      res.end("login required");
-      return;
-    }
+    if (!claudeTradeAuthed(req, res)) return;
     let snapshot;
     try {
       snapshot = fs.readFileSync(path.join(__dirname, "claude-trade", "index.html"), "utf8");
@@ -740,6 +829,36 @@ const server = http.createServer(async (req, res) => {
       "X-Robots-Tag": "noindex, nofollow",
     });
     res.end(snapshot);
+    return;
+  }
+  // Schwab sign-in, phone sized: one tap to Schwab, paste the address it bounces you to. The
+  // authorization state lives on the Pi for 20 minutes, so the two halves can be minutes apart.
+  if (reqUrl.pathname === "/claude-trade/login") {
+    if (!claudeTradeAuthed(req, res)) return;
+    if (req.method === "GET") {
+      const started = await claudetradeLogin(["login", "--begin", "--json"]);
+      renderClaudeTradeLogin(res, {
+        authUrl: started.auth_url,
+        banner: started.auth_url ? "" : (started.error || "could not start a sign-in"),
+      });
+      return;
+    }
+    if (req.method === "POST") {
+      const raw = await new Promise(function(resolve) {
+        var d = "";
+        req.on("data", function(c) { if (d.length < 8192) d += c; });
+        req.on("end", function() { resolve(d); });
+      });
+      const pasted = (new URLSearchParams(raw).get("url") || "").replace(/[\r\n]/g, "").trim();
+      const done = await claudetradeLogin(["login", "--finish", "-", "--json"], pasted);
+      renderClaudeTradeLogin(res, done.ok
+        ? { ok: true, banner: "Signed in. The token is good for " + done.days_left +
+                              " days, and the trading jobs can reach Schwab again." }
+        : { ok: false, banner: done.error || "the sign-in did not complete" });
+      return;
+    }
+    res.writeHead(405, { "Content-Type": "text/plain", "Allow": "GET, POST" });
+    res.end("method not allowed");
     return;
   }
   if (reqUrl.pathname === "/admin") {
