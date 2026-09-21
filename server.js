@@ -21,6 +21,14 @@ function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
 
+// Compare a secret without leaking it through timing. Hashing both sides first gives two buffers of
+// the same length whatever was typed, so timingSafeEqual can never throw (it did on non-ASCII input
+// whose bytes outnumber its characters) and the comparison says nothing about the secret's length.
+function secretEquals(given, expected) {
+  const h = function(s) { return crypto.createHash("sha256").update(String(s), "utf8").digest(); };
+  return crypto.timingSafeEqual(h(given), h(expected));
+}
+
 // Deliberately no default password: with no config file the admin login never succeeds.
 function readAdminPassword() {
   const cfg = readJson(ADMIN_CONFIG);
@@ -68,9 +76,8 @@ function claudeTradeAuthed(req, res) {
     res.end("claude-trade is not configured yet: create claude-trade.auth.json on the Pi");
     return false;
   }
-  const given = Buffer.from(req.headers.authorization || "");
-  const expected = Buffer.from("Basic " + Buffer.from(conf.user + ":" + conf.password).toString("base64"));
-  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+  const expected = "Basic " + Buffer.from(conf.user + ":" + conf.password).toString("base64");
+  if (!secretEquals(req.headers.authorization || "", expected)) {
     res.writeHead(401, {
       "WWW-Authenticate": 'Basic realm="claude-trade", charset="UTF-8"',
       "Content-Type": "text/plain",
@@ -748,7 +755,20 @@ async function handleApi(req, res, wss) {
   return json(res, { error: "Not found" }, 404);
 }
 
-const server = http.createServer(async (req, res) => {
+// Every route runs inside this catch. The handler is async, so a throw anywhere in it (a malformed
+// Host header, a bad body) used to become an unhandled rejection, which ends the whole process:
+// one crafted request could take the site down. Now that request gets an error and the site stays up.
+const server = http.createServer(function(req, res) {
+  handleRequest(req, res).catch(function(err) {
+    console.error("request failed:", req.method, String(req.url).slice(0, 120), "-", err && err.message);
+    if (!res.headersSent) {
+      res.writeHead(err instanceof TypeError ? 400 : 500, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+    }
+    res.end("request failed");
+  });
+});
+
+async function handleRequest(req, res) {
   const reqUrl = new URL(req.url, `http://${req.headers.host}`);
 
   // Spotify OAuth: login redirect
@@ -880,13 +900,14 @@ const server = http.createServer(async (req, res) => {
   }
   if (reqUrl.pathname === "/admin/login" && req.method === "POST") {
     const raw = await new Promise(function(resolve) {
-      var d = ""; req.on("data", function(c) { d += c; }); req.on("end", function() { resolve(d); });
+      var d = "";
+      req.on("data", function(c) { if (d.length < 8192) d += c; });   // a password form is tiny
+      req.on("end", function() { resolve(d); });
     });
     var params = new URLSearchParams(raw);
     const adminPassword = readAdminPassword();
     const given = params.get("password") || "";
-    const ok = adminPassword !== null && given.length === adminPassword.length &&
-      crypto.timingSafeEqual(Buffer.from(given), Buffer.from(adminPassword));
+    const ok = adminPassword !== null && secretEquals(given, adminPassword);
     if (ok) {
       const token = generateSession();
       res.writeHead(302, {
@@ -927,7 +948,7 @@ const server = http.createServer(async (req, res) => {
   }
   res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });
   res.end(homepage);
-});
+}
 
 const wss = new WebSocket.Server({ server });
 
