@@ -156,6 +156,95 @@ function renderClaudeTradeLogin(res, opts) {
   res.end(page);
 }
 
+// claudetrade mode switch. `claudetrade set-mode --json` does the work, including every check it
+// makes at the terminal: a live mode needs Schwab data, a live token, no HALT file, and the exact
+// confirmation phrase, which goes in on stdin. Every change is announced in Telegram.
+function claudetradeRun(args, stdin) {
+  return new Promise(function(resolve) {
+    const conf = claudeTradeConfig();
+    if (!fs.existsSync(conf.bin)) {
+      resolve({ error: "the trading agent is not installed where this site expects it" });
+      return;
+    }
+    const child = execFile(conf.bin, args, { cwd: conf.cwd, timeout: 60000, maxBuffer: 1 << 20 },
+      function(err, stdout) {
+        const lines = String(stdout || "").trim().split("\n");
+        try {
+          resolve(JSON.parse(lines[lines.length - 1]));
+        } catch {
+          resolve({ error: err && err.killed ? "claudetrade timed out" : "claudetrade could not be run" });
+        }
+      });
+    child.stdin.end(stdin === undefined ? "" : stdin + "\n");
+  });
+}
+
+// The browser resends Basic credentials on any request to this host, including a form another site
+// submits, so a POST that changes the mode must come from a page on this site.
+function sameOriginPost(req) {
+  const site = req.headers["sec-fetch-site"];
+  if (site) return site === "same-origin";
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try { return new URL(origin).host === req.headers.host; } catch { return false; }
+}
+
+const CLAUDETRADE_MODES = {
+  report: ["Report only", "Analysis and reports. No orders at all, not even simulated ones."],
+  paper: ["Paper", "Orders are simulated against a paper account. No real money moves."],
+  live_approve: ["Live, with approval", "Real orders at Schwab, each one waiting for your yes in Telegram. Unapproved orders expire."],
+  live_auto: ["Live, automatic", "Real orders at Schwab, placed at 12:30 ET inside the risk limits with no approval step."],
+};
+
+function renderClaudeTradeMode(res, state, opts) {
+  opts = opts || {};
+  let page;
+  try {
+    page = fs.readFileSync(path.join(__dirname, "claude-trade-mode.html"), "utf8");
+  } catch {
+    res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+    res.end("the mode page is missing from this checkout");
+    return;
+  }
+  const current = state.mode || "";
+  const problems = state.live_problems || [];
+  const banner = opts.banner
+    ? '<div class="banner ' + (opts.ok ? "ok" : "bad") + '">' + escapeHtml(opts.banner)
+      + (opts.details && opts.details.length
+        ? "<ul>" + opts.details.map(function(d) { return "<li>" + escapeHtml(d) + "</li>"; }).join("") + "</ul>" : "")
+      + "</div>" : "";
+  const options = (state.modes || []).map(function(m) {
+    const label = CLAUDETRADE_MODES[m] || [m, ""];
+    const live = m.indexOf("live") === 0;
+    const blocked = live && problems.length > 0;
+    return '<label class="mode' + (live ? " live" : "") + (m === current ? " current" : "")
+      + (blocked ? " blocked" : "") + '">'
+      + '<input type="radio" name="mode" value="' + escapeHtml(m) + '"'
+      + (m === current ? " checked" : "") + (blocked ? " disabled" : "") + ">"
+      + '<span><strong>' + escapeHtml(label[0]) + "</strong>"
+      + (m === current ? ' <em>current</em>' : "")
+      + '<code>' + escapeHtml(m) + "</code><br>" + escapeHtml(label[1]) + "</span></label>";
+  }).join("");
+  const blockers = problems.length
+    ? '<div class="banner bad">Live modes are unavailable until these are fixed:<ul>'
+      + problems.map(function(p) { return "<li>" + escapeHtml(p) + "</li>"; }).join("") + "</ul></div>" : "";
+  page = page
+    .replace("{{STATUS}}", function() {
+      return escapeHtml(current ? "Current mode: " + ((CLAUDETRADE_MODES[current] || [current])[0]) : "Mode unknown");
+    })
+    .replace("{{BANNER}}", function() { return banner; })
+    .replace("{{BLOCKERS}}", function() { return blockers; })
+    .replace("{{OPTIONS}}", function() { return options; })
+    .replace("{{GUARDRAILS}}", function() { return escapeHtml(state.guardrails || ""); })
+    .replace(/\{\{PHRASE\}\}/g, function() { return escapeHtml(state.confirm_phrase || ""); });
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Robots-Tag": "noindex, nofollow",
+  });
+  res.end(page);
+}
+
 // claudetrade home-page tile. The trading jobs write claude-trade/stats.json (public numbers only:
 // percentages, counts, flags) beside the private snapshot. Market hours are computed here so the
 // tile stays right between job runs. Full-day NYSE closures mirror claudetrade/data/calendar.py;
@@ -875,6 +964,63 @@ async function handleRequest(req, res) {
         ? { ok: true, banner: "Signed in. The token is good for " + done.days_left +
                               " days, and the trading jobs can reach Schwab again." }
         : { ok: false, banner: done.error || "the sign-in did not complete" });
+      return;
+    }
+    res.writeHead(405, { "Content-Type": "text/plain", "Allow": "GET, POST" });
+    res.end("method not allowed");
+    return;
+  }
+  // Mode switch, phone sized. Stepping down (to paper or report) takes one tap; stepping up to a
+  // live mode needs the same typed phrase the terminal asks for.
+  if (reqUrl.pathname === "/claude-trade/mode") {
+    if (!claudeTradeAuthed(req, res)) return;
+    if (req.method === "GET") {
+      const state = await claudetradeRun(["set-mode", "--json"]);
+      if (state.error) {
+        res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+        res.end(state.error);
+        return;
+      }
+      renderClaudeTradeMode(res, state);
+      return;
+    }
+    if (req.method === "POST") {
+      if (!sameOriginPost(req)) {
+        res.writeHead(403, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+        res.end("mode changes must come from this site's own page");
+        return;
+      }
+      const raw = await new Promise(function(resolve) {
+        var d = "";
+        req.on("data", function(c) { if (d.length < 8192) d += c; });
+        req.on("end", function() { resolve(d); });
+      });
+      const form = new URLSearchParams(raw);
+      const mode = form.get("mode") || "";
+      const phrase = (form.get("confirm") || "").replace(/[\r\n]/g, "").trim();
+      let result;
+      if (!Object.prototype.hasOwnProperty.call(CLAUDETRADE_MODES, mode)) {
+        result = { ok: false, banner: "Pick a mode first." };
+      } else {
+        const done = await claudetradeRun(["set-mode", mode, "--json"], phrase);
+        if (done.error) result = { ok: false, banner: done.error };
+        else if (done.ok && done.previous === mode) result = { ok: true, banner: "Already in that mode; nothing changed." };
+        else if (done.ok) result = { ok: true, banner: "Mode changed from " + done.previous + " to " + mode
+                                                       + ". It takes effect at the next job run." };
+        else if ((done.messages || []).some(function(m) { return m.indexOf("Cancelled") === 0; }))
+          result = { ok: false, banner: "The confirmation phrase did not match, so nothing changed." };
+        else result = { ok: false, banner: "Nothing changed.",
+                        details: (done.messages || []).filter(function(m) {
+                          return /^(  - |mode must|could not)/.test(m);
+                        }).map(function(m) { return m.trim().replace(/^- /, ""); }) };
+      }
+      const state = await claudetradeRun(["set-mode", "--json"]);
+      if (state.error) {
+        res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+        res.end(state.error);
+        return;
+      }
+      renderClaudeTradeMode(res, state, result);
       return;
     }
     res.writeHead(405, { "Content-Type": "text/plain", "Allow": "GET, POST" });

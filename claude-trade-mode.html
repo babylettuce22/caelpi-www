@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>claudetrade mode</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e8;
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+      display: flex;
+      justify-content: center;
+      -webkit-text-size-adjust: 100%;
+    }
+    .box {
+      background: #141420;
+      border: 1px solid #1e1e30;
+      border-radius: 16px;
+      padding: 24px 20px;
+      width: 100%;
+      max-width: 460px;
+      align-self: flex-start;
+    }
+    h1 { font-size: 19px; font-weight: 600; }
+    .sub { font-size: 13px; color: #6a6a80; margin-top: 4px; }
+    .banner {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .banner.ok { background: rgba(80, 200, 140, 0.13); border: 1px solid rgba(80, 200, 140, 0.3); color: #5fd0a0; }
+    .banner.bad { background: rgba(224, 80, 80, 0.15); border: 1px solid rgba(224, 80, 80, 0.3); color: #e05050; }
+    .step { margin-top: 24px; }
+    .step h2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6a6a80;
+      margin-bottom: 10px;
+    }
+    p { font-size: 14px; line-height: 1.55; color: #b8b8c8; }
+    p + p { margin-top: 10px; }
+    a.button, button {
+      display: block;
+      width: 100%;
+      background: #7c6fe0;
+      color: #fff;
+      border: none;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+    a.button:active, button:active { opacity: 0.8; }
+    button.ghost {
+      background: transparent;
+      border: 1px solid #2a2a42;
+      color: #b8b8c8;
+      font-weight: 500;
+      margin-bottom: 10px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 84px;
+      background: #0a0a0f;
+      border: 1px solid #1e1e30;
+      color: #e0e0e8;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      line-height: 1.4;
+      outline: none;
+      resize: vertical;
+      margin-bottom: 10px;
+      -webkit-appearance: none;
+    }
+    textarea:focus { border-color: #7c6fe0; }
+    .foot { margin-top: 22px; font-size: 12px; color: #4e4e63; line-height: 1.5; }
+    .foot a { color: #6a6a80; }
+    .banner ul { margin: 8px 0 0 18px; }
+    label.mode {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 12px 14px;
+      border: 1px solid #1e1e30;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: #9a9ab0;
+      cursor: pointer;
+    }
+    label.mode strong { color: #e0e0e8; font-size: 14px; font-weight: 600; }
+    label.mode em { font-style: normal; font-size: 11px; color: #5fd0a0; margin-left: 4px; }
+    label.mode code { float: right; font-size: 11px; color: #4e4e63; }
+    label.mode input { margin-top: 3px; accent-color: #7c6fe0; }
+    label.mode.live strong { color: #f0b060; }
+    label.mode.blocked { opacity: 0.45; cursor: not-allowed; }
+    label.mode:has(input:checked) { border-color: #7c6fe0; background: rgba(124, 111, 224, 0.08); }
+    #confirm-step { display: none; }
+    #confirm-step.shown { display: block; }
+    input[type=text] {
+      width: 100%;
+      background: #0a0a0f;
+      border: 1px solid #1e1e30;
+      color: #e0e0e8;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      margin: 10px 0;
+      -webkit-appearance: none;
+    }
+    input[type=text]:focus { border-color: #e05050; }
+    .phrase { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e0e0e8; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Trading mode</h1>
+    <div class="sub">{{STATUS}}</div>
+    {{BANNER}}
+
+    <form method="POST" action="/claude-trade/mode" id="form">
+      <div class="step">
+        <h2>Mode</h2>
+        {{BLOCKERS}}
+        {{OPTIONS}}
+      </div>
+
+      <div class="step" id="confirm-step">
+        <h2>Confirm real money</h2>
+        <p>This mode sends real orders to your Schwab account. {{GUARDRAILS}}</p>
+        <p>Type <span class="phrase">{{PHRASE}}</span> to confirm.</p>
+        <input type="text" name="confirm" id="confirm" autocapitalize="characters" autocomplete="off"
+               autocorrect="off" spellcheck="false" enterkeyhint="done">
+      </div>
+
+      <div class="step">
+        <button type="submit">Change mode</button>
+      </div>
+    </form>
+
+    <div class="foot">
+      The change takes effect at the next job run, and Telegram gets a message each time the mode
+      changes. To stop all orders right away, use <code>claudetrade halt</code> on the Pi.
+      <a href="/claude-trade">Back to the dashboard</a>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var step = document.getElementById("confirm-step");
+      var current = document.querySelector('input[name=mode]:checked');
+      current = current ? current.value : "";
+      function sync() {
+        var picked = document.querySelector('input[name=mode]:checked');
+        var live = picked && picked.value.indexOf("live") === 0 && picked.value !== current;
+        step.classList.toggle("shown", !!live);
+      }
+      document.querySelectorAll('input[name=mode]').forEach(function (r) { r.addEventListener("change", sync); });
+      sync();
+    })();
+  </script>
+</body>
+</html>
