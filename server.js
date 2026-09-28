@@ -17,6 +17,11 @@ const WebSocket = require("ws");
 const CONFIG_DIR = process.env.CAELPI_CONFIG_DIR || path.join(require("os").homedir(), "caelpi-config");
 const ADMIN_CONFIG = path.join(CONFIG_DIR, "admin-config.json");
 
+// Paused 2026-09-28 at the user's request (the trading jobs' systemd timers are stopped too): the
+// homepage tile hides itself when /api/claude-trade isn't ok, and the dashboard page shows a notice
+// instead of the last snapshot. Delete this block (and its use below) to unpause.
+const CLAUDE_TRADE_PAUSED = true;
+
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
@@ -721,6 +726,7 @@ async function handleApi(req, res, wss) {
   }
 
   if (pathname === "/api/claude-trade" && method === "GET") {
+    if (CLAUDE_TRADE_PAUSED) return json(res, { error: "claudetrade is paused" }, 503);
     const stats = readJson(path.join(__dirname, "claude-trade", "stats.json"));
     if (!stats) return json(res, { error: "claudetrade stats not generated yet" }, 503);
     // Real money only: paper-mode numbers never leave the Pi, and the tile stays hidden.
@@ -924,6 +930,11 @@ async function handleRequest(req, res) {
   // It deliberately does not reuse the admin session. The live dashboard server on port 8181 is LAN-only.
   if (reqUrl.pathname === "/claude-trade" || reqUrl.pathname === "/claude-trade/") {
     if (!claudeTradeAuthed(req, res)) return;
+    if (CLAUDE_TRADE_PAUSED) {
+      res.writeHead(503, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+      res.end("claudetrade is paused for now");
+      return;
+    }
     let snapshot;
     try {
       snapshot = fs.readFileSync(path.join(__dirname, "claude-trade", "index.html"), "utf8");
