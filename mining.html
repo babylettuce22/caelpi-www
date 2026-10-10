@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Another Mining Game</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      min-height: 100%;
+      background: #0b0b12;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 56px;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(160, 110, 50, 0.18), transparent 45%),
+        radial-gradient(circle at 80% 100%, rgba(40, 120, 120, 0.15), transparent 45%),
+        #0b0b12;
+    }
+
+    h1 {
+      font-size: 30px;
+      font-weight: 300;
+      letter-spacing: 1px;
+      color: rgba(255, 255, 255, 0.9);
+      text-align: center;
+    }
+    .sub {
+      margin-top: 8px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.5);
+      text-align: center;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      width: 100%;
+      max-width: 760px;
+      margin-top: 28px;
+    }
+    .panel {
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 22px 24px;
+    }
+    .panel h2 {
+      font-size: 18px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.9);
+    }
+    .req {
+      margin-top: 4px;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.45);
+    }
+
+    .btn {
+      display: block;
+      margin-top: 16px;
+      padding: 13px 16px;
+      border-radius: 10px;
+      background: rgba(230, 170, 90, 0.9);
+      color: #17110a;
+      font-weight: 600;
+      font-size: 15px;
+      text-align: center;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:hover { background: rgba(245, 190, 110, 1); }
+    .btn:active { transform: scale(0.98); }
+    .btn.secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.85);
+      font-weight: 500;
+      font-size: 14px;
+      padding: 10px 14px;
+      margin-top: 10px;
+    }
+    .btn.secondary:hover { background: rgba(255, 255, 255, 0.14); }
+    .btn.disabled { pointer-events: none; opacity: 0.35; }
+    .size { font-weight: 400; opacity: 0.7; }
+
+    details { margin-top: 16px; }
+    summary {
+      cursor: pointer;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+    summary:hover { color: rgba(255, 255, 255, 0.95); }
+    ol {
+      margin: 10px 0 0 20px;
+      font-size: 14px;
+      line-height: 1.55;
+      color: rgba(255, 255, 255, 0.72);
+    }
+    li + li { margin-top: 6px; }
+    b { color: rgba(255, 255, 255, 0.92); font-weight: 600; }
+
+    .note {
+      width: 100%;
+      max-width: 760px;
+      margin-top: 16px;
+      font-size: 13px;
+      line-height: 1.55;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    .error { color: rgba(255, 150, 130, 0.85); }
+
+    @media (max-width: 480px) {
+      body { padding-top: 28px; }
+      h1 { font-size: 25px; }
+      .panel { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Another Mining Game</h1>
+  <div class="sub" id="buildInfo">Checking for the latest build&hellip;</div>
+
+  <div class="cards">
+    <div class="panel">
+      <h2>Windows</h2>
+      <div class="req">Windows 10 or 11, 64-bit, DirectX 12 graphics card</div>
+      <a class="btn disabled" id="dlWindows" href="/mining/download/windows">Download for Windows <span class="size"></span></a>
+      <a class="btn secondary disabled" id="dlChat" href="/mining/download/spoken-chat">Spoken chat add-on (optional) <span class="size"></span></a>
+      <details>
+        <summary>How to install</summary>
+        <ol>
+          <li>Right-click the zip and choose <b>Extract All</b>. The game won't run from inside the zip.</li>
+          <li>Open the extracted <b>Another Mining Game</b> folder and run <b>AnotherMiningGame.exe</b>.</li>
+          <li>If Windows says it protected your PC, click <b>More info</b>, then <b>Run anyway</b>. It only asks once per version.</li>
+          <li><b>Updating:</b> delete the old folder and extract the new one. Your worlds and settings are saved elsewhere and carry over.</li>
+          <li><b>Spoken chat</b> (reads chat aloud): extract the add-on, move its <b>Kokoro</b> folder into the game folder next to AnotherMiningGame.exe, then turn it on in Settings. It doesn't change between builds, so you only need it once.</li>
+        </ol>
+      </details>
+    </div>
+
+    <div class="panel">
+      <h2>Mac</h2>
+      <div class="req">macOS 12 or newer, Apple Silicon or Intel</div>
+      <a class="btn disabled" id="dlMac" href="/mining/download/mac">Download for Mac <span class="size"></span></a>
+      <details>
+        <summary>How to install</summary>
+        <ol>
+          <li>Open the downloaded zip to unpack it, then drag <b>Another Mining Game</b> into your <b>Applications</b> folder.</li>
+          <li>Open it. macOS will say it can't check the app for malware, because it isn't from the App Store. Click <b>Done</b>.</li>
+          <li>Open <b>System Settings &rarr; Privacy &amp; Security</b>, scroll down, and click <b>Open Anyway</b> next to Another Mining Game. Confirm with your password.</li>
+          <li>After that it opens normally. Allow the microphone if you want voice chat.</li>
+          <li><b>Updating:</b> replace the old app with the new one; you'll need <b>Open Anyway</b> once more. Your worlds and settings carry over.</li>
+        </ol>
+      </details>
+    </div>
+  </div>
+
+  <div class="note">These are test builds of a game in progress, so expect rough edges. If something breaks, tell Cael what you were doing when it happened.</div>
+
+  <script>
+    function mb(bytes) {
+      return bytes >= 1073741824 ? (bytes / 1073741824).toFixed(1) + " GB" : Math.round(bytes / 1048576) + " MB";
+    }
+    function enable(id, bytes) {
+      var el = document.getElementById(id);
+      if (!bytes) return;
+      el.classList.remove("disabled");
+      el.querySelector(".size").textContent = "(" + mb(bytes) + ")";
+    }
+    fetch("/mining/latest.json", { cache: "no-store" })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var info = document.getElementById("buildInfo");
+        if (d.error) { info.textContent = d.error; info.classList.add("error"); return; }
+        if (!d.build) { info.textContent = "No build has been posted yet."; return; }
+        var when = new Date(d.build.date);
+        info.textContent = "Latest build: " + when.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
+          + " at " + when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+        enable("dlWindows", d.windows);
+        enable("dlMac", d.mac);
+        enable("dlChat", d.spokenChat);
+      })
+      .catch(function() {
+        var info = document.getElementById("buildInfo");
+        info.textContent = "Couldn't reach the download server. Try again in a minute.";
+        info.classList.add("error");
+      });
+  </script>
+</body>
+</html>

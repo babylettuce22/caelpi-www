@@ -14,6 +14,7 @@ const WebSocket = require("ws");
 //   spotify.json             client_id / client_secret / redirect_uri / refresh_token
 //   wordnik.json             {"api_key": "..."}
 //   claude-trade.auth.json   {"user": "...", "password": "..."}   also optional "bin"/"cwd" (see below)
+//   mining.json              {"token": "..."}   read-only GitHub token for the /mining downloads (see below)
 const CONFIG_DIR = process.env.CAELPI_CONFIG_DIR || path.join(require("os").homedir(), "caelpi-config");
 const ADMIN_CONFIG = path.join(CONFIG_DIR, "admin-config.json");
 
@@ -92,6 +93,84 @@ function claudeTradeAuthed(req, res) {
     return false;
   }
   return true;
+}
+
+// Another Mining Game downloads at /mining (unlisted: nothing on the site links to it). The builds are
+// release assets in a PRIVATE GitHub repo, uploaded by Tools/publish/publish.py in the game project.
+// mining.json in CONFIG_DIR: {"token": "<fine-grained token: that repo only, Contents read-only>"},
+// optionally "repo" and "password" (asks for it before the page or any download). A download is
+// answered with a redirect to GitHub's own short-lived signed link: no file passes through the Pi and
+// the token never reaches the browser.
+const MINING_ASSETS = {
+  windows: "AnotherMiningGame-Windows.zip",
+  mac: "AnotherMiningGame-Mac.zip",
+  "spoken-chat": "AnotherMiningGame-SpokenChat-Windows.zip",
+};
+let miningCache = { at: 0, data: null };
+
+function miningConfig() {
+  const c = readJson(path.join(CONFIG_DIR, "mining.json")) || {};
+  return { token: c.token, repo: c.repo || "babylettuce22/another-mining-game-builds", password: c.password };
+}
+
+// Same shape as claudeTradeAuthed, but only when a password is set; any user name is accepted.
+function miningAuthed(req, res, conf) {
+  if (!conf.password) return true;
+  const given = String(req.headers.authorization || "");
+  const decoded = given.startsWith("Basic ") ? Buffer.from(given.slice(6), "base64").toString("utf8") : "";
+  if (!secretEquals(decoded.slice(decoded.indexOf(":") + 1), conf.password)) {
+    res.writeHead(401, {
+      "WWW-Authenticate": 'Basic realm="Another Mining Game", charset="UTF-8"',
+      "Content-Type": "text/plain",
+      "Cache-Control": "no-store",
+    });
+    res.end("password required");
+    return false;
+  }
+  return true;
+}
+
+function githubApi(conf, apiPath, accept) {
+  return new Promise(function(resolve, reject) {
+    const req = https.request({
+      hostname: "api.github.com",
+      path: apiPath,
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + conf.token,
+        "Accept": accept || "application/vnd.github+json",
+        "User-Agent": "caelpi-www",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      timeout: 10000,
+    }, function(res) {
+      let body = "";
+      res.on("data", function(c) { if (body.length < 2000000) body += c; });
+      res.on("end", function() { resolve({ status: res.statusCode, headers: res.headers, body: body }); });
+    });
+    req.on("timeout", function() { req.destroy(new Error("GitHub timed out")); });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+// The newest build-* release and the fixed spoken-chat one, cached for a minute.
+async function miningReleases(conf) {
+  if (miningCache.data && Date.now() - miningCache.at < 60000) return miningCache.data;
+  const r = await githubApi(conf, "/repos/" + conf.repo + "/releases?per_page=30");
+  if (r.status !== 200) throw new Error("GitHub releases: HTTP " + r.status);
+  const releases = JSON.parse(r.body).filter(function(x) { return !x.draft; });
+  const build = releases
+    .filter(function(x) { return x.tag_name.startsWith("build-"); })
+    .sort(function(a, b) { return String(b.published_at).localeCompare(String(a.published_at)); })[0] || null;
+  const chat = releases.find(function(x) { return x.tag_name === "spoken-chat"; }) || null;
+  miningCache = { at: Date.now(), data: { build: build, chat: chat } };
+  return miningCache.data;
+}
+
+function miningAsset(data, key) {
+  const release = key === "spoken-chat" ? data.chat : data.build;
+  return release && release.assets.find(function(a) { return a.name === MINING_ASSETS[key]; }) || null;
 }
 
 // Run one half of `claudetrade login` and return the JSON it prints. The redirect address goes in
@@ -1084,6 +1163,51 @@ async function handleRequest(req, res) {
       "Set-Cookie": "admin_session=; Path=/; HttpOnly; Max-Age=0",
     });
     res.end();
+    return;
+  }
+  if (reqUrl.pathname === "/mining" || reqUrl.pathname.startsWith("/mining/")) {
+    const conf = miningConfig();
+    if (!miningAuthed(req, res, conf)) return;
+    const noIndex = { "X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store" };
+    if (reqUrl.pathname === "/mining" || reqUrl.pathname === "/mining/") {
+      const page = fs.readFileSync(path.join(__dirname, "mining.html"), "utf8");
+      res.writeHead(200, Object.assign({ "Content-Type": "text/html; charset=utf-8" }, noIndex));
+      res.end(page);
+      return;
+    }
+    if (!conf.token) {
+      res.writeHead(503, Object.assign({ "Content-Type": "application/json" }, noIndex));
+      res.end(JSON.stringify({ error: "Downloads aren't set up yet." }));
+      return;
+    }
+    if (reqUrl.pathname === "/mining/latest.json") {
+      const data = await miningReleases(conf);
+      const size = function(key) { const a = miningAsset(data, key); return a ? a.size : null; };
+      res.writeHead(200, Object.assign({ "Content-Type": "application/json" }, noIndex));
+      res.end(JSON.stringify({
+        build: data.build && { name: data.build.name, date: data.build.published_at },
+        windows: size("windows"), mac: size("mac"), spokenChat: size("spoken-chat"),
+      }));
+      return;
+    }
+    const key = reqUrl.pathname.slice("/mining/download/".length);
+    if (reqUrl.pathname.startsWith("/mining/download/") && Object.prototype.hasOwnProperty.call(MINING_ASSETS, key)) {
+      const asset = miningAsset(await miningReleases(conf), key);
+      if (!asset) {
+        res.writeHead(404, Object.assign({ "Content-Type": "text/plain" }, noIndex));
+        res.end("That download isn't available yet.");
+        return;
+      }
+      // GitHub answers an octet-stream request for a private asset with a redirect to a signed URL
+      // that works for a few minutes without credentials; pass that redirect on.
+      const r = await githubApi(conf, "/repos/" + conf.repo + "/releases/assets/" + asset.id, "application/octet-stream");
+      if (r.status !== 302 || !r.headers.location) throw new Error("GitHub asset " + asset.id + ": HTTP " + r.status);
+      res.writeHead(302, Object.assign({ "Location": r.headers.location }, noIndex));
+      res.end();
+      return;
+    }
+    res.writeHead(404, Object.assign({ "Content-Type": "text/plain" }, noIndex));
+    res.end("not found");
     return;
   }
   if (reqUrl.pathname === "/minesweeper") {

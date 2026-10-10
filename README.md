@@ -12,6 +12,7 @@ GitHub every minute). The server reads them from `~/caelpi-config/` on the Pi
 | `spotify.json` | `client_id`, `client_secret`, `redirect_uri`, `refresh_token` (the `/callback` flow rewrites it) |
 | `wordnik.json` | `{"api_key": "..."}` |
 | `claude-trade.auth.json` | `{"user": "...", "password": "..."}` for `/claude-trade`, `/claude-trade/login` and `/claude-trade/mode`. Optional `bin` and `cwd` point at the trading agent when it is not in `~/claudetrade`. |
+| `mining.json` | `{"token": "..."}` for `/mining`: a fine-grained GitHub token limited to the builds repo with **Contents: Read-only**. Optional `"password"` (asked for before the page or any download) and `"repo"`. |
 
 ## /claude-trade
 
@@ -33,3 +34,13 @@ confirmation phrase typed on the page goes in on stdin and must match word for w
 must be POSTed from this site (checked with `Sec-Fetch-Site`, else `Origin`), because the
 browser would send the Basic credentials along with a form another site submits. The agent
 announces every change in Telegram.
+
+## /mining
+
+An unlisted download page for Another Mining Game test builds; nothing on the site links to it.
+The builds are release assets in a private GitHub repo, uploaded by `Tools/publish/publish.py`
+in the game project after each Unity build: the newest `build-*` release supplies the Windows and
+Mac zips, and the fixed `spoken-chat` release the Windows voice add-on.
+`/mining/download/<windows|mac|spoken-chat>` asks GitHub for the asset with the token above and
+redirects the browser to GitHub's short-lived signed link, so no file passes through the Pi and
+the token never reaches the browser. The release list is cached for a minute.
