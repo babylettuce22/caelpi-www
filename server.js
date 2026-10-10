@@ -104,6 +104,7 @@ function claudeTradeAuthed(req, res) {
 const MINING_ASSETS = {
   windows: "AnotherMiningGame-Windows.zip",
   mac: "AnotherMiningGame-Mac.zip",
+  "mac-server": "AnotherMiningGame-MacServer.zip",
   "spoken-chat": "AnotherMiningGame-SpokenChat-Windows.zip",
 };
 let miningCache = { at: 0, data: null };
@@ -1186,7 +1187,7 @@ async function handleRequest(req, res) {
       res.writeHead(200, Object.assign({ "Content-Type": "application/json" }, noIndex));
       res.end(JSON.stringify({
         build: data.build && { name: data.build.name, date: data.build.published_at },
-        windows: size("windows"), mac: size("mac"), spokenChat: size("spoken-chat"),
+        windows: size("windows"), mac: size("mac"), macServer: size("mac-server"), spokenChat: size("spoken-chat"),
       }));
       return;
     }
