@@ -114,7 +114,8 @@
       max-width: 760px;
       margin-top: 16px;
     }
-    .panel.wide .btn.secondary { display: inline-block; padding: 10px 18px; }
+    .server-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+    .server-buttons .btn.secondary { flex: 1 1 220px; }
 
     .note {
       width: 100%;
@@ -175,11 +176,14 @@
   <div class="panel wide">
     <h2>Host a server</h2>
     <div class="req">Optional. Run one on a computer that stays on, and everyone joins it, even while the host isn't playing.</div>
-    <a class="btn secondary disabled" id="dlMacServer" href="/mining/download/mac-server">Mac server launcher <span class="size"></span></a>
+    <div class="server-buttons">
+      <a class="btn secondary disabled" id="dlWindowsServer" href="/mining/download/windows-server">Windows server launcher <span class="size"></span></a>
+      <a class="btn secondary disabled" id="dlMacServer" href="/mining/download/mac-server">Mac server launcher <span class="size"></span></a>
+    </div>
     <details>
       <summary>How to host and join</summary>
       <ol>
-        <li><b>Windows:</b> in the game folder, double-click <b>Start Server.cmd</b>. It's already included in the Windows download.</li>
+        <li><b>Windows:</b> in the game folder, double-click <b>Start Server.cmd</b>. It comes with the Windows download. If it's missing, get the launcher above and extract both files into the game folder, next to AnotherMiningGame.exe.</li>
         <li><b>Mac:</b> download the launcher above, unzip it, and double-click <b>Start Server.command</b>. It finds the game in Applications. The first time, macOS may block it: open <b>System Settings &rarr; Privacy &amp; Security</b> and click <b>Open Anyway</b>. If the server stops straight away, open the game normally once first.</li>
         <li>Allow incoming connections if your computer's firewall asks. The server runs in that window; close it to stop the server.</li>
         <li><b>Joining:</b> start the game, choose <b>Join game</b>, and pick the server from the list. If it isn't listed, type the server computer's address, port <b>7777</b>. The Mac server window shows its address; on Windows, run <b>ipconfig</b> and use the IPv4 Address.</li>
@@ -213,6 +217,7 @@
         enable("dlMac", d.mac);
         enable("dlChat", d.spokenChat);
         enable("dlMacServer", d.macServer);
+        enable("dlWindowsServer", d.windowsServer);
       })
       .catch(function() {
         var info = document.getElementById("buildInfo");
