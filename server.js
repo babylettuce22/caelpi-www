@@ -175,15 +175,26 @@ function miningAsset(data, key) {
   return release && release.assets.find(function(a) { return a.name === MINING_ASSETS[key]; }) || null;
 }
 
-// Crash and error reports from the game (CrashReports.cs in the game project), POSTed to /mining-report as a
-// zip. Not behind the /mining password (the game doesn't have it); instead the game sends "reportKey" from
-// mining.json as X-Report-Key when one is set, and the route caps size, rate and storage. Reports are kept
-// outside the repo in ~/mining-reports (MINING_REPORTS_DIR), oldest dropped first; Tools/crash/fetch-reports.sh
-// in the game project copies them down. No address is stored.
+// Crash, error and bug reports from the game (CrashReports.cs in the game project), POSTed to /mining-report
+// as a zip; X-Report-Kind says which ("crash", "errors", "bug"). Not behind the /mining password (the game
+// doesn't have it); instead the game sends "reportKey" from mining.json as X-Report-Key when one is set, and
+// the route caps size, rate and storage. Reports are kept outside the repo in ~/mining-reports
+// (MINING_REPORTS_DIR), oldest dropped first; Tools/crash/fetch-reports.sh in the game project copies them
+// down. The reply's X-Report-Id names the report (the end of its file name), so a player can quote it.
+// No address is stored.
 const MINING_REPORTS_DIR = process.env.MINING_REPORTS_DIR || path.join(require("os").homedir(), "mining-reports");
 const MINING_REPORT_MAX = 8 * 1024 * 1024;
-const MINING_REPORTS_KEEP = { bytes: 500 * 1024 * 1024, files: 400 };
+const MINING_REPORTS_KEEP = { bytes: 500 * 1024 * 1024, reports: 200 };
 const miningReportTimes = { all: [], byAddress: new Map() };
+
+// The sender's address, for the rate limit. Visitors arrive through cloudflared on this machine, which sets
+// CF-Connecting-IP; X-Forwarded-For isn't used, as a client can write anything there.
+function miningReportAddress(req) {
+  const socket = String(req.socket.remoteAddress || "");
+  const local = socket === "127.0.0.1" || socket === "::1" || socket === "::ffff:127.0.0.1";
+  const cf = String(req.headers["cf-connecting-ip"] || "").trim();
+  return local && cf ? cf : socket;
+}
 
 // At most 20 an hour from one address and 120 an hour in all.
 function miningReportAllowed(address) {
@@ -194,32 +205,44 @@ function miningReportAllowed(address) {
   all.push(Date.now()); mine.push(Date.now());
   miningReportTimes.all = all;
   miningReportTimes.byAddress.set(address, mine);
-  if (miningReportTimes.byAddress.size > 1000) miningReportTimes.byAddress.clear();
+  // Forget addresses with nothing in the last hour (never everyone at once: that would reset the limit).
+  if (miningReportTimes.byAddress.size > 1000)
+    miningReportTimes.byAddress.forEach(function(times, key) {
+      if (!times.some(function(t) { return t > hourAgo; })) miningReportTimes.byAddress.delete(key);
+    });
   return true;
 }
 
+// A report is its .zip and .json together: both go when it's dropped.
 function pruneMiningReports() {
-  const files = fs.readdirSync(MINING_REPORTS_DIR)
-    .map(function(name) { const st = fs.statSync(path.join(MINING_REPORTS_DIR, name)); return { name: name, size: st.size, at: st.mtimeMs }; })
-    .sort(function(a, b) { return b.at - a.at; });
-  let bytes = 0;
-  files.forEach(function(f, i) {
-    bytes += f.size;
-    if (bytes > MINING_REPORTS_KEEP.bytes || i >= MINING_REPORTS_KEEP.files) fs.unlinkSync(path.join(MINING_REPORTS_DIR, f.name));
+  const reports = new Map();
+  fs.readdirSync(MINING_REPORTS_DIR).forEach(function(name) {
+    const st = fs.statSync(path.join(MINING_REPORTS_DIR, name));
+    const base = name.replace(/\.(zip|json)$/, "");
+    const r = reports.get(base) || { names: [], size: 0, at: 0 };
+    r.names.push(name); r.size += st.size; r.at = Math.max(r.at, st.mtimeMs);
+    reports.set(base, r);
   });
+  let bytes = 0;
+  Array.from(reports.values())
+    .sort(function(a, b) { return b.at - a.at; })
+    .forEach(function(r, i) {
+      bytes += r.size;
+      if (bytes > MINING_REPORTS_KEEP.bytes || i >= MINING_REPORTS_KEEP.reports)
+        r.names.forEach(function(name) { fs.unlinkSync(path.join(MINING_REPORTS_DIR, name)); });
+    });
 }
 
 async function handleMiningReport(req, res) {
-  const reply = function(status, text) {
-    res.writeHead(status, { "Content-Type": "text/plain", "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" });
+  const reply = function(status, text, headers) {
+    res.writeHead(status, Object.assign({ "Content-Type": "text/plain", "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" }, headers));
     res.end(text);
   };
   if (req.method !== "POST") return reply(405, "POST a report");
   const conf = readJson(path.join(CONFIG_DIR, "mining.json")) || {};
   if (conf.reportKey && !secretEquals(req.headers["x-report-key"] || "", conf.reportKey)) return reply(403, "wrong key");
   if (Number(req.headers["content-length"] || 0) > MINING_REPORT_MAX) return reply(413, "too large");
-  const address = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress || "";
-  if (!miningReportAllowed(address)) return reply(429, "too many reports; try later");
+  if (!miningReportAllowed(miningReportAddress(req))) return reply(429, "too many reports; try later");
 
   const chunks = [];
   let size = 0;
@@ -238,7 +261,8 @@ async function handleMiningReport(req, res) {
   const clean = function(s, n) { return String(s || "").replace(/[^A-Za-z0-9 ._()-]/g, "").slice(0, n); };
   const kind = /^[a-z]{1,16}$/.test(req.headers["x-report-kind"] || "") ? req.headers["x-report-kind"] : "report";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const base = stamp + "_" + kind + "_" + crypto.randomBytes(3).toString("hex");
+  const id = crypto.randomBytes(3).toString("hex");
+  const base = stamp + "_" + kind + "_" + id;
   fs.mkdirSync(MINING_REPORTS_DIR, { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(MINING_REPORTS_DIR, base + ".zip"), body, { mode: 0o600 });
   fs.writeFileSync(path.join(MINING_REPORTS_DIR, base + ".json"), JSON.stringify({
@@ -250,7 +274,7 @@ async function handleMiningReport(req, res) {
   }, null, 2) + "\n", { mode: 0o600 });
   pruneMiningReports();
   console.log("mining report:", base, body.length, "bytes");
-  reply(200, "thanks");
+  reply(200, "thanks", { "X-Report-Id": id });
 }
 
 // Run one half of `claudetrade login` and return the JSON it prints. The redirect address goes in
