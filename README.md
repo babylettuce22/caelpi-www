@@ -44,3 +44,14 @@ Mac zips, and the fixed `spoken-chat` release the Windows voice add-on.
 `/mining/download/<windows|mac|spoken-chat>` asks GitHub for the asset with the token above and
 redirects the browser to GitHub's short-lived signed link, so no file passes through the Pi and
 the token never reaches the browser. The release list is cached for a minute.
+
+With `"password"` set in `mining.json`, `/mining` and `/mining-reports` show a password-only sign-in
+page (`mining-login.html`, POST `/mining/login`, 10 wrong tries per address per 15 minutes). A right
+password sets a 60-day `mining_auth` cookie signed with the password, so restarts keep people signed
+in and changing the password signs everyone out. Basic auth with any user name still works for curl.
+
+## /mining-reports
+
+Lists the crash, error and bug reports the game uploads to `/mining-report` (kept in `~/mining-reports`):
+bug text, screenshot, machine details, each file in a report's zip, and a delete button per report plus
+"Clear reports". Same sign-in as `/mining`, and refused outright when no password is set.

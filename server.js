@@ -115,21 +115,70 @@ function miningConfig() {
   return { token: c.token, repo: c.repo || "babylettuce22/another-mining-game-builds", password: c.password };
 }
 
-// Same shape as claudeTradeAuthed, but only when a password is set; any user name is accepted.
-function miningAuthed(req, res, conf) {
-  if (!conf.password) return true;
+// The /mining and /mining-reports password (only when one is set). The browser signs in once on a
+// password-only page (mining-login.html, POST /mining/login) and keeps a cookie for MINING_SIGNIN_DAYS. The
+// cookie is "<expiry>.<HMAC of it keyed by the password>", so it survives the server restarting on every deploy
+// and changing the password signs everyone out. Basic auth (any user name) is still accepted, for curl.
+const MINING_SIGNIN_DAYS = 60;
+const miningLoginFails = new Map();
+
+function miningCookieSig(conf, expiry) {
+  return crypto.createHmac("sha256", "mining-signin:" + conf.password).update(String(expiry)).digest("hex");
+}
+
+function miningSignedIn(req, conf) {
   const given = String(req.headers.authorization || "");
-  const decoded = given.startsWith("Basic ") ? Buffer.from(given.slice(6), "base64").toString("utf8") : "";
-  if (!secretEquals(decoded.slice(decoded.indexOf(":") + 1), conf.password)) {
-    res.writeHead(401, {
-      "WWW-Authenticate": 'Basic realm="Another Mining Game", charset="UTF-8"',
-      "Content-Type": "text/plain",
-      "Cache-Control": "no-store",
-    });
-    res.end("password required");
-    return false;
+  if (given.startsWith("Basic ")) {
+    const decoded = Buffer.from(given.slice(6), "base64").toString("utf8");
+    if (secretEquals(decoded.slice(decoded.indexOf(":") + 1), conf.password)) return true;
   }
-  return true;
+  const m = /(?:^|;\s*)mining_auth=(\d+)\.([0-9a-f]{64})(?:;|$)/.exec(req.headers.cookie || "");
+  return !!m && Number(m[1]) > Date.now() && secretEquals(m[2], miningCookieSig(conf, m[1]));
+}
+
+// A page someone opened gets the sign-in page; anything else (data, downloads) a plain 401.
+function miningAuthed(req, res, conf, reqUrl) {
+  if (!conf.password || miningSignedIn(req, conf)) return true;
+  const p = reqUrl ? reqUrl.pathname : "";
+  const page = req.method === "GET" && /^\/mining(-reports)?\/?$/.test(p);
+  res.writeHead(401, { "Content-Type": page ? "text/html; charset=utf-8" : "text/plain", "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" });
+  res.end(page ? fs.readFileSync(path.join(__dirname, "mining-login.html"), "utf8") : "password required");
+  return false;
+}
+
+// POST /mining/login (form: password, next). At most 10 wrong tries per address per 15 minutes.
+async function handleMiningLogin(req, res) {
+  const raw = await new Promise(function(resolve) {
+    let d = "";
+    req.on("data", function(c) { if (d.length < 8192) d += c; });
+    req.on("end", function() { resolve(d); });
+  });
+  const params = new URLSearchParams(raw);
+  const next = /^\/mining(-reports)?\/?$/.test(params.get("next") || "") ? params.get("next") : "/mining";
+  const conf = miningConfig();
+  const address = miningReportAddress(req), since = Date.now() - 15 * 60000;
+  const fails = (miningLoginFails.get(address) || []).filter(function(t) { return t > since; });
+  const back = function(error) {
+    res.writeHead(303, { Location: next + "?error=" + error, "Cache-Control": "no-store" });
+    res.end();
+  };
+  if (!conf.password) { res.writeHead(303, { Location: next }); res.end(); return; }
+  if (fails.length >= 10) return back("wait");
+  if (!secretEquals(params.get("password") || "", conf.password)) {
+    fails.push(Date.now());
+    miningLoginFails.set(address, fails);
+    if (miningLoginFails.size > 1000) miningLoginFails.forEach(function(t, k) { if (!t.some(function(x) { return x > since; })) miningLoginFails.delete(k); });
+    return back("wrong");
+  }
+  miningLoginFails.delete(address);
+  const expiry = Date.now() + MINING_SIGNIN_DAYS * 86400000;
+  const secure = req.headers["cf-connecting-ip"] ? "; Secure" : "";   // through the tunnel = https
+  res.writeHead(303, {
+    Location: next,
+    "Cache-Control": "no-store",
+    "Set-Cookie": "mining_auth=" + expiry + "." + miningCookieSig(conf, expiry) + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" + MINING_SIGNIN_DAYS * 86400 + secure,
+  });
+  res.end();
 }
 
 function githubApi(conf, apiPath, accept) {
@@ -368,7 +417,7 @@ function handleMiningReports(req, res, reqUrl) {
     res.end(body);
   };
   if (!conf.password) return send(503, "text/plain", "Set a password in mining.json first.");
-  if (!miningAuthed(req, res, conf)) return;
+  if (!miningAuthed(req, res, conf, reqUrl)) return;
   const p = reqUrl.pathname;
   if (p === "/mining-reports" || p === "/mining-reports/")
     return send(200, "text/html; charset=utf-8", fs.readFileSync(path.join(__dirname, "mining-reports.html"), "utf8"));
@@ -1410,9 +1459,10 @@ async function handleRequest(req, res) {
   }
   if (reqUrl.pathname === "/mining-report") return handleMiningReport(req, res);
   if (reqUrl.pathname === "/mining-reports" || reqUrl.pathname.startsWith("/mining-reports/")) return handleMiningReports(req, res, reqUrl);
+  if (reqUrl.pathname === "/mining/login" && req.method === "POST") return handleMiningLogin(req, res);
   if (reqUrl.pathname === "/mining" || reqUrl.pathname.startsWith("/mining/")) {
     const conf = miningConfig();
-    if (!miningAuthed(req, res, conf)) return;
+    if (!miningAuthed(req, res, conf, reqUrl)) return;
     const noIndex = { "X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store" };
     if (reqUrl.pathname === "/mining" || reqUrl.pathname === "/mining/") {
       const page = fs.readFileSync(path.join(__dirname, "mining.html"), "utf8");
