@@ -277,6 +277,145 @@ async function handleMiningReport(req, res) {
   reply(200, "thanks", { "X-Report-Id": id });
 }
 
+// /mining-reports: a page listing the stored reports, behind the /mining password (and refused outright
+// when no password is set, as the logs hold players' machine details). The list reads each zip's index and
+// its small text entries only; one entry can be opened on its own (/mining-reports/file/<report>/<entry>)
+// or the whole zip downloaded (/mining-reports/file/<report>.zip).
+const MINING_REPORT_NAME = /^[0-9TZ-]+_[a-z]{1,16}_[0-9a-f]{6}$/;
+
+// The entries of a zip (name, sizes, where the data starts), from its central directory. Reads only the end
+// of the file and the directory, not the data. Null if it isn't a readable zip.
+function zipEntries(file) {
+  const fd = fs.openSync(file, "r");
+  try {
+    const size = fs.fstatSync(fd).size;
+    const tailLen = Math.min(size, 65557);
+    const tail = Buffer.alloc(tailLen);
+    fs.readSync(fd, tail, 0, tailLen, size - tailLen);
+    let eocd = -1;
+    for (let i = tailLen - 22; i >= 0; i--) if (tail.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) return null;
+    const count = tail.readUInt16LE(eocd + 10), cdSize = tail.readUInt32LE(eocd + 12), cdOffset = tail.readUInt32LE(eocd + 16);
+    if (cdOffset + cdSize > size) return null;
+    const cd = Buffer.alloc(cdSize);
+    fs.readSync(fd, cd, 0, cdSize, cdOffset);
+    const entries = [];
+    for (let p = 0, n = 0; n < count && p + 46 <= cdSize && cd.readUInt32LE(p) === 0x02014b50; n++) {
+      const nameLen = cd.readUInt16LE(p + 28), extraLen = cd.readUInt16LE(p + 30), commentLen = cd.readUInt16LE(p + 32);
+      entries.push({
+        name: cd.toString("utf8", p + 46, p + 46 + nameLen),
+        method: cd.readUInt16LE(p + 10),
+        compressed: cd.readUInt32LE(p + 20),
+        size: cd.readUInt32LE(p + 24),
+        offset: cd.readUInt32LE(p + 42),
+      });
+      p += 46 + nameLen + extraLen + commentLen;
+    }
+    return entries;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// One entry's bytes (stored or deflated), or null.
+function zipRead(file, entry) {
+  const fd = fs.openSync(file, "r");
+  try {
+    const head = Buffer.alloc(30);
+    fs.readSync(fd, head, 0, 30, entry.offset);
+    if (head.readUInt32LE(0) !== 0x04034b50) return null;
+    const data = Buffer.alloc(entry.compressed);
+    fs.readSync(fd, data, 0, entry.compressed, entry.offset + 30 + head.readUInt16LE(26) + head.readUInt16LE(28));
+    if (entry.method === 0) return data;
+    if (entry.method === 8) return require("zlib").inflateRawSync(data, { maxOutputLength: 64 * 1024 * 1024 });
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function miningReportList() {
+  let names = [];
+  try { names = fs.readdirSync(MINING_REPORTS_DIR); } catch { return []; }
+  return names
+    .filter(function(n) { return n.endsWith(".zip") && MINING_REPORT_NAME.test(n.slice(0, -4)); })
+    .sort().reverse()
+    .map(function(n) {
+      const base = n.slice(0, -4), zip = path.join(MINING_REPORTS_DIR, n);
+      const meta = readJson(path.join(MINING_REPORTS_DIR, base + ".json")) || {};
+      const r = { name: base, kind: base.split("_")[1], id: base.split("_")[2], build: meta.build || "",
+                  platform: meta.platform || "", received: meta.received || "", bytes: meta.bytes || 0, files: [] };
+      try {
+        (zipEntries(zip) || []).forEach(function(e) {
+          r.files.push({ name: e.name, size: e.size });
+          if ((e.name === "bug.txt" || e.name === "report.txt") && e.size <= 64 * 1024) {
+            const text = zipRead(zip, e);
+            if (text) r[e.name === "bug.txt" ? "bug" : "report"] = text.toString("utf8");
+          }
+        });
+      } catch (err) {
+        r.error = "couldn't read this zip";
+      }
+      return r;
+    });
+}
+
+function handleMiningReports(req, res, reqUrl) {
+  const conf = miningConfig();
+  const noIndex = { "X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store" };
+  const send = function(status, type, body, headers) {
+    res.writeHead(status, Object.assign({ "Content-Type": type }, noIndex, headers));
+    res.end(body);
+  };
+  if (!conf.password) return send(503, "text/plain", "Set a password in mining.json first.");
+  if (!miningAuthed(req, res, conf)) return;
+  const p = reqUrl.pathname;
+  if (p === "/mining-reports" || p === "/mining-reports/")
+    return send(200, "text/html; charset=utf-8", fs.readFileSync(path.join(__dirname, "mining-reports.html"), "utf8"));
+  if (p === "/mining-reports/list.json") return send(200, "application/json", JSON.stringify(miningReportList()));
+  // Deletes the reports the page listed (sent as {"names": [...]}), so one that arrived since isn't lost
+  // unseen. The custom header keeps another site from posting here with the browser's saved password: a
+  // cross-site request can only carry it after a preflight this server never answers.
+  if (p === "/mining-reports/clear") {
+    if (req.method !== "POST" || req.headers["x-clear-reports"] !== "yes") return send(400, "text/plain", "bad request");
+    const chunks = [];
+    req.on("data", function(c) { chunks.push(c); });
+    req.on("end", function() {
+      let names = [];
+      try { names = JSON.parse(Buffer.concat(chunks).toString("utf8")).names; } catch {}
+      let removed = 0;
+      (Array.isArray(names) ? names : []).forEach(function(base) {
+        if (typeof base !== "string" || !MINING_REPORT_NAME.test(base)) return;
+        [".zip", ".json"].forEach(function(ext) {
+          try { fs.unlinkSync(path.join(MINING_REPORTS_DIR, base + ext)); if (ext === ".zip") removed++; } catch {}
+        });
+      });
+      console.log("mining reports cleared:", removed);
+      send(200, "application/json", JSON.stringify({ removed: removed }));
+    });
+    return;
+  }
+
+  const m = /^\/mining-reports\/file\/([^/]+?)(\.zip|\/(.+))$/.exec(p);
+  const base = m && decodeURIComponent(m[1]);
+  if (!m || !MINING_REPORT_NAME.test(base)) return send(404, "text/plain", "not found");
+  const zip = path.join(MINING_REPORTS_DIR, base + ".zip");
+  if (!fs.existsSync(zip)) return send(404, "text/plain", "not found");
+  if (m[2] === ".zip")
+    return send(200, "application/zip", fs.readFileSync(zip), { "Content-Disposition": 'attachment; filename="' + base + '.zip"' });
+
+  const entryName = decodeURIComponent(m[3]);
+  const entry = (zipEntries(zip) || []).find(function(e) { return e.name === entryName; });
+  const data = entry && zipRead(zip, entry);
+  if (!data) return send(404, "text/plain", "not found");
+  const ext = path.extname(entryName).toLowerCase();
+  const type = { ".txt": "text/plain; charset=utf-8", ".log": "text/plain; charset=utf-8", ".json": "text/plain; charset=utf-8",
+                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png" }[ext];
+  const file = base + "_" + path.basename(entryName).replace(/[^A-Za-z0-9._-]/g, "_");
+  send(200, type || "application/octet-stream", data,
+       { "Content-Disposition": (type ? "inline" : "attachment") + '; filename="' + file + '"', "X-Content-Type-Options": "nosniff" });
+}
+
 // Run one half of `claudetrade login` and return the JSON it prints. The redirect address goes in
 // on stdin, so the single-use code it carries never appears in the process list.
 function claudetradeLogin(args, stdin) {
@@ -1270,6 +1409,7 @@ async function handleRequest(req, res) {
     return;
   }
   if (reqUrl.pathname === "/mining-report") return handleMiningReport(req, res);
+  if (reqUrl.pathname === "/mining-reports" || reqUrl.pathname.startsWith("/mining-reports/")) return handleMiningReports(req, res, reqUrl);
   if (reqUrl.pathname === "/mining" || reqUrl.pathname.startsWith("/mining/")) {
     const conf = miningConfig();
     if (!miningAuthed(req, res, conf)) return;
