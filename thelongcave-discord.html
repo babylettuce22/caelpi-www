@@ -1,0 +1,158 @@
+<!doctype html>
+<!--
+  The Long Cave: Discord join card, served publicly at /thelongcave/discord (server.js) so the itch.io page can
+  iframe it:  <iframe src="https://www.babylettuce.net/thelongcave/discord" width="360" height="230" style="border:0"></iframe>
+  Reads the server's public widget JSON straight from the browser (Discord Server Settings > Widget must stay on).
+  INVITE: set to the permanent invite (Expire After: Never). Left empty, the button uses the widget's instant invite,
+  which Discord makes and replaces on its own.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Long Cave Discord</title>
+<style>
+  :root {
+    --stone: #17130f;
+    --stone-2: #211b15;
+    --edge: #3a2f24;
+    --bone: #ece3d3;
+    --dust: #a89a85;
+    --lamp: #e9a447;
+    --lamp-deep: #b8742a;
+  }
+  html, body { margin: 0; background: transparent; }
+  #tlc-discord [hidden] { display: none; }
+  #tlc-discord {
+    box-sizing: border-box;
+    max-width: 360px;
+    padding: 18px 18px 16px;
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    background:
+      radial-gradient(120% 90% at 0% 0%, rgba(233, 164, 71, 0.16), transparent 55%),
+      linear-gradient(180deg, var(--stone-2), var(--stone));
+    color: var(--bone);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  }
+  #tlc-discord .tlc-head { display: flex; align-items: center; gap: 12px; }
+  #tlc-discord .tlc-icon {
+    flex: none; width: 44px; height: 44px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: radial-gradient(circle at 50% 45%, var(--lamp), var(--lamp-deep) 60%, #5a3815);
+    box-shadow: 0 0 18px rgba(233, 164, 71, 0.45);
+    color: var(--stone); font: 700 18px Georgia, "Times New Roman", serif;
+  }
+  #tlc-discord .tlc-name {
+    margin: 0; font: 700 20px/1.15 Georgia, "Times New Roman", serif; letter-spacing: 0.01em;
+  }
+  #tlc-discord .tlc-online { margin-top: 3px; color: var(--dust); font-size: 13px; }
+  #tlc-discord .tlc-dot {
+    display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%;
+    background: var(--lamp); box-shadow: 0 0 8px var(--lamp); vertical-align: 1px;
+    animation: tlc-flicker 3.2s infinite;
+  }
+  @keyframes tlc-flicker { 0%, 100% { opacity: 1; } 47% { opacity: 0.85; } 50% { opacity: 0.55; } 53% { opacity: 0.9; } }
+  @media (prefers-reduced-motion: reduce) { #tlc-discord .tlc-dot { animation: none; } }
+  #tlc-discord .tlc-members { display: flex; align-items: center; margin: 14px 0 4px; min-height: 30px; }
+  #tlc-discord .tlc-members img, #tlc-discord .tlc-more {
+    width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--stone);
+    margin-left: -8px; background: var(--edge);
+  }
+  #tlc-discord .tlc-members > :first-child { margin-left: 0; }
+  #tlc-discord .tlc-more {
+    box-sizing: border-box; display: grid; place-items: center;
+    color: var(--dust); font-size: 11px; font-weight: 600;
+  }
+  #tlc-discord .tlc-voice { margin: 6px 0 0; color: var(--dust); font-size: 12.5px; }
+  #tlc-discord .tlc-join {
+    display: block; margin-top: 14px; padding: 10px 14px; border-radius: 7px;
+    background: linear-gradient(180deg, var(--lamp), var(--lamp-deep));
+    color: #1b1209; text-align: center; text-decoration: none; font-weight: 700; letter-spacing: 0.02em;
+    transition: filter 0.15s;
+  }
+  #tlc-discord .tlc-join:hover, #tlc-discord .tlc-join:focus-visible { filter: brightness(1.1); }
+  #tlc-discord .tlc-join:focus-visible { outline: 2px solid var(--bone); outline-offset: 2px; }
+  #tlc-discord .tlc-foot { margin-top: 10px; color: #7a6d5b; font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="tlc-discord" aria-live="polite">
+  <div class="tlc-head">
+    <div class="tlc-icon" aria-hidden="true">LC</div>
+    <div>
+      <h2 class="tlc-name">The Long Cave</h2>
+      <div class="tlc-online"><span class="tlc-dot" aria-hidden="true"></span><span class="tlc-count">Checking who's down here&hellip;</span></div>
+    </div>
+  </div>
+  <div class="tlc-members"></div>
+  <p class="tlc-voice" hidden></p>
+  <a class="tlc-join" href="#" target="_blank" rel="noopener">Join the Discord</a>
+  <div class="tlc-foot">Patch notes, bug reports and expedition buddies</div>
+</div>
+<script>
+(function () {
+  var SERVER_ID = "1560790489416863827";
+  var INVITE = "";            // permanent invite, e.g. "https://discord.gg/xxxxxxx"; empty = the widget's instant invite
+  var MAX_AVATARS = 8;
+  var REFRESH_MS = 120000;    // Discord caches the widget for a few minutes anyway
+
+  var root = document.getElementById("tlc-discord");
+  var nameEl = root.querySelector(".tlc-name");
+  var countEl = root.querySelector(".tlc-count");
+  var membersEl = root.querySelector(".tlc-members");
+  var voiceEl = root.querySelector(".tlc-voice");
+  var joinEl = root.querySelector(".tlc-join");
+  if (INVITE) joinEl.href = INVITE;
+
+  // Usernames are user-chosen, so everything goes in through textContent, never innerHTML.
+  function render(data) {
+    if (data.name) nameEl.textContent = data.name;
+    var n = data.presence_count || 0;
+    countEl.textContent = n === 1 ? "1 caver online" : n + " cavers online";
+    if (!INVITE && data.instant_invite) joinEl.href = data.instant_invite;
+
+    membersEl.textContent = "";
+    var members = data.members || [];
+    members.slice(0, MAX_AVATARS).forEach(function (m) {
+      var img = document.createElement("img");
+      img.src = m.avatar_url;
+      img.alt = m.username;
+      img.title = m.username;
+      img.loading = "lazy";
+      membersEl.appendChild(img);
+    });
+    if (members.length > MAX_AVATARS) {
+      var more = document.createElement("span");
+      more.className = "tlc-more";
+      more.textContent = "+" + (members.length - MAX_AVATARS);
+      membersEl.appendChild(more);
+    }
+
+    // The widget's channel list is the voice channels; show the ones someone is in.
+    var busy = (data.channels || []).filter(function (c) {
+      return members.some(function (m) { return m.channel_id === c.id; });
+    });
+    voiceEl.hidden = busy.length === 0;
+    voiceEl.textContent = busy.length ? "In voice: " + busy.map(function (c) { return c.name; }).join(", ") : "";
+  }
+
+  function load() {
+    // no-store: Discord's reply has no "Vary: Origin", so a copy the browser cached for another site would fail CORS here.
+    fetch("https://discord.com/api/guilds/" + SERVER_ID + "/widget.json", { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(render)
+      .catch(function () {
+        // The widget turned off or Discord unreachable: keep the card and the button, drop the live part.
+        countEl.textContent = "Come say hi";
+        if (joinEl.getAttribute("href") === "#") joinEl.hidden = true;  // no invite known yet
+      });
+  }
+
+  load();
+  setInterval(load, REFRESH_MS);
+})();
+</script>
+</body>
+</html>

@@ -1505,6 +1505,14 @@ async function handleRequest(req, res) {
     res.end("not found");
     return;
   }
+  // The Long Cave's Discord join card (thelongcave-discord.html), public on purpose: the itch.io page iframes it.
+  // The page reads Discord's widget JSON in the browser, so the server only hands out the file.
+  if (reqUrl.pathname === "/thelongcave/discord") {
+    const widgetPage = fs.readFileSync(path.join(__dirname, "thelongcave-discord.html"), "utf8");
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
+    res.end(widgetPage);
+    return;
+  }
   if (reqUrl.pathname === "/minesweeper") {
     const minesweeperPage = fs.readFileSync(path.join(__dirname, "minesweeper.html"), "utf8");
     res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-cache" });

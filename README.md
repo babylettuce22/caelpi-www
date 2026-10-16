@@ -55,3 +55,10 @@ in and changing the password signs everyone out. Basic auth with any user name s
 Lists the crash, error and bug reports the game uploads to `/mining-report` (kept in `~/mining-reports`):
 bug text, screenshot, machine details, each file in a report's zip, and a delete button per report plus
 "Clear reports". Same sign-in as `/mining`, and refused outright when no password is set.
+
+## /thelongcave/discord
+
+A public Discord join card for The Long Cave (`thelongcave-discord.html`), outside the `/mining` password
+because the game's itch.io page iframes it. The browser reads the server's Discord widget JSON itself (online
+count, avatars, voice channels, the widget's invite), so the route only serves the file. `INVITE` in the page
+overrides the button with a permanent invite.
