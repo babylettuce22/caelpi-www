@@ -60,5 +60,10 @@ bug text, screenshot, machine details, each file in a report's zip, and a delete
 
 A public Discord join card for The Long Cave (`thelongcave-discord.html`), outside the `/mining` password
 because the game's itch.io page iframes it. The browser reads the server's Discord widget JSON itself (online
-count, avatars, voice channels, the widget's invite), so the route only serves the file. `INVITE` in the page
-overrides the button with a permanent invite.
+count, avatars, voice channels), so the route only serves the file.
+
+`/thelongcave/discord/join` redirects to the server's Discord invite: `THELONGCAVE_INVITE` in `server.js` (a
+never-expiring invite) when set, else the invite in Discord's widget JSON (Discord replaces it on its own; cached
+5 minutes). The card's button and the itch banner link here, so a new invite is one line in `server.js`.
+`/thelongcave/discord/banner.png` is that banner (`thelongcave-discord-banner.png`, the game's name-board sign
+reading "Join the discord!").

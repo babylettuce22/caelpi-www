@@ -3,8 +3,8 @@
   The Long Cave: Discord join card, served publicly at /thelongcave/discord (server.js) so the itch.io page can
   iframe it:  <iframe src="https://www.babylettuce.net/thelongcave/discord" width="360" height="280" style="border:0"></iframe>
   Reads the server's public widget JSON straight from the browser (Discord Server Settings > Widget must stay on).
-  INVITE: set to the permanent invite (Expire After: Never). Left empty, the button uses the widget's instant invite,
-  which Discord makes and replaces on its own.
+  The button goes to /thelongcave/discord/join, which redirects to the invite set in server.js (THELONGCAVE_INVITE) or
+  else the widget's instant invite, so the permanent invite is set in one place.
 -->
 <html lang="en">
 <head>
@@ -82,7 +82,7 @@
 <script>
 (function () {
   var SERVER_ID = "1560790489416863827";
-  var INVITE = "";            // permanent invite, e.g. "https://discord.gg/xxxxxxx"; empty = the widget's instant invite
+  var INVITE = "https://www.babylettuce.net/thelongcave/discord/join";  // the site's redirect to the current invite (server.js)
   var MAX_AVATARS = 8;
   var REFRESH_MS = 120000;    // Discord caches the widget for a few minutes anyway
 

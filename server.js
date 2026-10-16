@@ -1234,6 +1234,37 @@ const server = http.createServer(function(req, res) {
   });
 });
 
+// The Long Cave's Discord invite for /thelongcave/discord/join. THELONGCAVE_INVITE (a never-expiring invite; public, not
+// a secret) wins; empty, the route follows the invite in the server's widget JSON, which Discord replaces on its own,
+// cached for 5 minutes. Links on itch and elsewhere point at the route, so changing the invite never breaks them.
+const THELONGCAVE_INVITE = "";
+const THELONGCAVE_GUILD = "1560790489416863827";
+let theLongCaveInvite = { at: 0, url: null };
+
+function theLongCaveInviteUrl() {
+  if (THELONGCAVE_INVITE) return Promise.resolve(THELONGCAVE_INVITE);
+  if (theLongCaveInvite.url && Date.now() - theLongCaveInvite.at < 300000) return Promise.resolve(theLongCaveInvite.url);
+  return new Promise(function(resolve) {
+    const req = https.get({
+      hostname: "discord.com",
+      path: "/api/guilds/" + THELONGCAVE_GUILD + "/widget.json",
+      headers: { "User-Agent": "caelpi-www" },
+      timeout: 5000,
+    }, function(res) {
+      let body = "";
+      res.on("data", function(c) { body += c; });
+      res.on("end", function() {
+        let url = null;
+        try { url = JSON.parse(body).instant_invite || null; } catch (e) {}
+        if (url && /^https:\/\/discord\.(com|gg)\//.test(url)) theLongCaveInvite = { at: Date.now(), url: url };
+        resolve(theLongCaveInvite.url);  // a stale invite beats none
+      });
+    });
+    req.on("timeout", function() { req.destroy(); });
+    req.on("error", function() { resolve(theLongCaveInvite.url); });
+  });
+}
+
 async function handleRequest(req, res) {
   const reqUrl = new URL(req.url, `http://${req.headers.host}`);
 
@@ -1506,6 +1537,19 @@ async function handleRequest(req, res) {
     return;
   }
   // The Long Cave's Discord join card (thelongcave-discord.html), public on purpose: the itch.io page iframes it.
+  // /join redirects to the current invite (see theLongCaveInviteUrl); banner.png is the clickable sign for the itch page.
+  if (reqUrl.pathname === "/thelongcave/discord/join") {
+    const invite = await theLongCaveInviteUrl();
+    res.writeHead(302, { "Location": invite || "/thelongcave/discord", "Cache-Control": "no-store" });
+    res.end();
+    return;
+  }
+  if (reqUrl.pathname === "/thelongcave/discord/banner.png") {
+    const bannerPath = path.join(__dirname, "thelongcave-discord-banner.png");
+    res.writeHead(200, { "Content-Type": "image/png", "Content-Length": fs.statSync(bannerPath).size, "Cache-Control": "public, max-age=3600" });
+    fs.createReadStream(bannerPath).pipe(res);
+    return;
+  }
   // The page reads Discord's widget JSON in the browser, so the server only hands out the file.
   if (reqUrl.pathname === "/thelongcave/discord") {
     const widgetPage = fs.readFileSync(path.join(__dirname, "thelongcave-discord.html"), "utf8");
